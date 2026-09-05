@@ -384,6 +384,12 @@ def admin_keyboard():
                     callback_data="admin:delete",
                 )
             ],
+                   [
+            InlineKeyboardButton(
+                "📢 Пост в канал",
+                callback_data="admin:channel"
+            )
+        ],
             [
                 InlineKeyboardButton(
                     "📋 Мои фотосессии",
