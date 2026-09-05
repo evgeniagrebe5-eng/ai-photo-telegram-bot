@@ -4,7 +4,7 @@ import base64
 
 from fastapi import FastAPI, Request
 from openai import OpenAI
-
+from prompts import get_session
 from telegram import (
     Update,
     InlineKeyboardButton,
@@ -378,7 +378,8 @@ async def handle_photo(
 
         image_file.name = "input.jpg"
 
-        prompt = PROMPTS[style]
+    session = get_session(style)
+prompt = session["prompt"] if session and session.get("prompt") else PROMPTS[style]
 
         result = client.images.edit(
             model="gpt-image-2",
