@@ -4,7 +4,7 @@ import base64
 
 from fastapi import FastAPI, Request
 from openai import OpenAI
-
+from prompts import get_session
 from telegram import (
     Update,
     InlineKeyboardButton,
