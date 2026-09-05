@@ -1,6 +1,5 @@
 import os
 import io
-import json
 import base64
 
 from fastapi import FastAPI, Request
@@ -14,8 +13,8 @@ from telegram import (
 from telegram.ext import (
     Application,
     CommandHandler,
-    MessageHandler,
     CallbackQueryHandler,
+    MessageHandler,
     ContextTypes,
     filters,
 )
@@ -23,477 +22,279 @@ from telegram.ext import (
 import uvicorn
 
 
-# ==========================================
-# НАСТРОЙКИ
-# ==========================================
-
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
-
-ADMIN_ID = 7003476980
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
 app = FastAPI()
 
-telegram_app = (
-    Application.builder()
-    .token(BOT_TOKEN)
-    .build()
-)
-
-PROMPTS_FILE = "prompts.json"
+telegram_app = Application.builder().token(BOT_TOKEN).build()
 
 
-# ==========================================
-# ГОТОВЫЕ ПРОМТЫ
-# ==========================================
+# =========================
+# ПРОМТЫ ФОТОСЕССИЙ
+# =========================
 
-DEFAULT_PROMPTS = {
+PROMPTS = {
 
-    "autumn": {
-        "name": "🍂 Осенняя",
-        "prompt": """
-Create a premium photorealistic autumn fashion editorial photograph.
+    "autumn": """
+Create a luxurious photorealistic autumn fashion photoshoot.
 
-Create an elegant autumn photoshoot with warm golden foliage,
-natural red rowan berries, beautiful autumn atmosphere,
-cinematic natural light and sophisticated fashion styling.
+Keep the person's identity exactly recognizable.
+Preserve facial structure, eyes, nose, lips, eyebrows,
+natural proportions and distinctive features.
 
-Professional full-frame camera look.
-Extremely realistic skin texture.
-Natural pores.
-Fine eyelashes.
+Young woman in an elegant autumn fashion editorial
+surrounded by beautiful red rowan berries and golden
+autumn foliage.
+
+Dynamic fashion editorial photography.
+Natural movement and elegant posing.
+Premium professional photography.
+Realistic skin texture and natural pores.
 Individual hair details.
-Realistic fabric texture.
+Detailed fabric texture.
+Beautiful natural autumn colors.
+Soft cinematic daylight.
+Physically realistic lighting and shadows.
+Professional full-frame camera look.
+Realistic depth of field.
+Extremely detailed photorealistic image.
+
+Do not change the person's identity.
+Do not make the face look like another person.
+Avoid plastic skin, beauty filters, excessive smoothing,
+CGI appearance, artificial eyes or distorted features.
+""",
+
+    "luxury": """
+Create a luxurious high-end professional fashion portrait.
+
+Preserve the person's identity and recognizable facial features.
+Keep the exact natural face shape and proportions.
+
+Elegant luxury editorial styling.
+Sophisticated premium atmosphere.
+Expensive studio environment.
+Professional fashion photography.
+Natural realistic skin texture and pores.
+Fine eyelashes and realistic eyes.
+Detailed clothing and fabric texture.
+Controlled cinematic studio lighting.
+Beautiful highlights and natural shadows.
+Full-frame professional camera look.
+High dynamic range.
+Realistic depth of field.
+Extremely detailed photorealistic result.
+
+No plastic skin.
+No artificial beauty filter.
+No excessive retouching.
+No face alteration.
+No CGI appearance.
+""",
+
+    "fashion": """
+Create a professional high-fashion editorial photoshoot.
+
+Preserve the person's identity exactly.
+Do not change recognizable facial features or natural proportions.
+
+Modern fashion magazine editorial.
+Confident elegant pose.
+Dynamic professional fashion photography.
+Sophisticated styling and composition.
+Natural realistic skin texture.
+Visible fine skin details and pores.
+Detailed clothing texture.
+Professional studio and cinematic lighting.
 Natural shadows.
+Full-frame professional camera appearance.
+High dynamic range.
+Realistic depth of field.
+Sharp fine details.
+Photorealistic premium quality.
+
+Do not change identity.
+Avoid plastic skin, excessive smoothing,
+beauty filters, distorted facial features or CGI.
+""",
+
+    "love": """
+Create a romantic professional Love Story photoshoot.
+
+Preserve the person's identity exactly and naturally.
+Keep recognizable facial features and proportions.
+
+Elegant romantic cinematic atmosphere.
+Warm beautiful natural light.
+Emotional sophisticated photography.
+Natural body language and elegant posing.
+Premium professional photography.
+Realistic skin texture.
+Natural pores and fine details.
+Detailed clothing.
+Physically accurate lighting and shadows.
+Beautiful depth of field.
+Full-frame professional camera look.
+Photorealistic high-end result.
+
+Do not change identity.
+Avoid artificial beauty filters or plastic skin.
+""",
+
+    "romantic": """
+Create a beautiful elegant romantic fashion portrait.
+
+Preserve the person's identity and natural facial features.
+
+Soft romantic atmosphere.
+Elegant styling.
+Delicate cinematic lighting.
+Natural realistic skin texture.
+Natural pores and fine details.
+Professional editorial photography.
+Beautiful composition.
+Realistic shadows and highlights.
+Full-frame camera look.
+Natural depth of field.
+Highly detailed photorealistic result.
+
+Do not change the person's identity.
+No artificial face changes.
+No plastic skin or excessive smoothing.
+""",
+
+    "black": """
+Create a dramatic black editorial fashion portrait.
+
+Preserve the person's identity exactly.
+Do not alter recognizable facial features or proportions.
+
+Black luxury fashion editorial.
+Dark sophisticated atmosphere.
+Elegant powerful composition.
+Dramatic professional studio lighting.
+Deep realistic shadows.
+Controlled highlights.
+Natural skin texture and pores.
+Detailed clothing and fabric.
+Professional full-frame camera look.
+High dynamic range.
+Realistic depth of field.
+Extremely detailed photorealistic result.
+
+No plastic skin.
+No beauty filter.
+No face alteration.
+No CGI appearance.
+""",
+
+    "children": """
+Create a professional children's portrait photoshoot.
+
+Preserve the child's identity exactly.
+Keep natural facial features, proportions and recognizable appearance.
+
+Beautiful natural child photography.
+Warm elegant atmosphere.
+Natural age-appropriate styling.
+Authentic expression.
+Professional portrait photography.
+Soft natural lighting.
+Realistic skin texture.
+Natural pores and fine details.
+Detailed clothing.
+Beautiful realistic background.
+Professional full-frame camera look.
+Natural depth of field.
+High-quality photorealistic result.
+
+Do not make the child look older.
+Do not change identity.
+Do not use artificial beauty filters.
+Avoid plastic skin and CGI appearance.
+""",
+
+    "men": """
+Create a premium professional men's fashion portrait.
+
+Preserve the person's identity exactly.
+Keep facial structure, eyes, nose, lips,
+eyebrows and natural proportions unchanged.
+
+Confident masculine editorial style.
+Modern luxury fashion photography.
+Sophisticated professional atmosphere.
+Natural realistic skin texture and pores.
+Detailed clothing and fabric.
+Professional studio or cinematic lighting.
+Natural shadows.
+Full-frame professional camera look.
 High dynamic range.
 Realistic depth of field.
 Crisp fine details.
+Photorealistic premium quality.
 
-Preserve the person's identity and recognizable facial features
-as accurately as possible.
-
-Do not change the face shape, eyes, nose, lips, eyebrows,
-or natural facial proportions.
-
-The result must look like a real professional photograph.
-
-Avoid plastic skin, beauty filters, excessive smoothing,
-over-sharpening, distorted facial features, unrealistic eyes,
-or CGI appearance.
+Do not change the person's identity.
+Avoid plastic skin, excessive smoothing,
+beauty filters, distorted facial features or CGI.
 """
-    },
-
-    "luxury": {
-        "name": "💎 Luxury",
-        "prompt": """
-Create a luxurious high-end fashion editorial photograph.
-
-Sophisticated premium atmosphere, elegant styling,
-cinematic professional lighting, refined composition,
-luxury fashion magazine aesthetic.
-
-Professional full-frame camera look.
-Realistic skin texture.
-Natural pores.
-Detailed eyelashes.
-Individual hair details.
-Realistic fabric texture.
-Physically accurate lighting.
-Natural shadows.
-High dynamic range.
-Realistic depth of field.
-
-Preserve the person's identity and recognizable facial features
-as accurately as possible.
-
-Do not change the face shape, eyes, nose, lips, eyebrows,
-or natural facial proportions.
-
-Photorealistic premium photography.
-
-No plastic skin, no artificial beauty filter,
-no CGI appearance.
-"""
-    },
-
-    "fashion": {
-        "name": "👠 Fashion",
-        "prompt": """
-Create a professional high-fashion editorial photograph.
-
-Dynamic sophisticated fashion pose.
-Premium fashion magazine aesthetic.
-Elegant composition.
-Professional cinematic lighting.
-Natural realistic environment.
-
-Professional full-frame camera look.
-Highly detailed realistic skin texture.
-Natural pores.
-Fine eyelashes.
-Individual hair details.
-Detailed clothing texture.
-Natural shadows.
-High dynamic range.
-Realistic depth of field.
-
-Preserve the person's identity and recognizable facial features
-as accurately as possible.
-
-Do not change facial proportions or make the person
-look like another person.
-
-Photorealistic professional fashion photography.
-
-No plastic skin.
-No artificial beauty filter.
-No CGI.
-"""
-    },
-
-    "love": {
-        "name": "❤️ Love Story",
-        "prompt": """
-Create an emotional romantic professional editorial photograph.
-
-Warm intimate atmosphere.
-Beautiful cinematic lighting.
-Elegant composition.
-Natural realistic colors.
-Premium photography aesthetic.
-
-Professional full-frame camera look.
-Realistic skin texture.
-Natural pores.
-Detailed clothing.
-Physically accurate lighting.
-Realistic depth of field.
-
-Preserve the person's identity and recognizable facial features
-as accurately as possible.
-
-Do not change the face shape, eyes, nose, lips,
-eyebrows or natural proportions.
-
-Photorealistic professional photography.
-
-No artificial beauty filter.
-No plastic skin.
-No CGI appearance.
-"""
-    },
-
-    "romantic": {
-        "name": "🌸 Romantic",
-        "prompt": """
-Create a beautiful romantic fashion editorial photograph.
-
-Soft elegant atmosphere.
-Delicate cinematic light.
-Sophisticated styling.
-Natural warm tones.
-Beautiful realistic background.
-Premium magazine photography.
-
-Extremely realistic skin texture.
-Natural pores.
-Detailed eyelashes.
-Realistic fabric.
-Physically accurate lighting.
-Professional full-frame camera look.
-Realistic depth of field.
-
-Preserve the person's identity and recognizable facial features
-as accurately as possible.
-
-Do not change facial proportions.
-
-Photorealistic result.
-
-No plastic skin.
-No excessive retouching.
-No CGI.
-"""
-    },
-
-    "black": {
-        "name": "🖤 Black Editorial",
-        "prompt": """
-Create a dramatic black fashion editorial photograph.
-
-Elegant dark styling.
-Sophisticated black atmosphere.
-Cinematic studio lighting.
-Deep realistic shadows.
-Premium fashion magazine aesthetic.
-Dramatic professional composition.
-
-Extremely detailed realistic skin texture.
-Natural pores.
-Individual hair details.
-Realistic fabric texture.
-Physically accurate lighting.
-High dynamic range.
-Realistic depth of field.
-
-Professional full-frame camera look.
-
-Preserve the person's identity and recognizable facial features
-as accurately as possible.
-
-Do not change facial proportions or make the person
-look like someone else.
-
-Photorealistic professional photography.
-
-No plastic skin.
-No artificial beauty filter.
-No CGI.
-"""
-    },
-
-    "child": {
-        "name": "👶 Детская",
-        "prompt": """
-Create a beautiful professional children's portrait photograph.
-
-Natural child photography with a warm, joyful and authentic
-atmosphere.
-
-Soft professional lighting.
-Natural colors.
-Realistic skin texture.
-Natural childlike facial proportions.
-Detailed clothing texture.
-Realistic eyes.
-Natural expression.
-Professional full-frame camera look.
-Realistic depth of field.
-High photographic detail.
-
-Preserve the child's identity and recognizable facial features
-as accurately as possible.
-
-Do not change the child's face shape, eyes, nose, lips,
-eyebrows or natural proportions.
-
-The child must look age-appropriate and completely natural.
-
-No adult makeup.
-No adult styling.
-No sexualized appearance.
-No plastic skin.
-No CGI.
-"""
-    },
-
-    "man": {
-        "name": "🤵 Мужская",
-        "prompt": """
-Create a premium professional men's fashion editorial portrait.
-
-Confident masculine styling.
-Sophisticated composition.
-Natural masculine pose.
-Professional cinematic lighting.
-Premium fashion magazine aesthetic.
-
-Professional full-frame camera look.
-Extremely detailed realistic skin texture.
-Natural pores.
-Detailed beard or facial hair when naturally present.
-Realistic clothing texture.
-Natural shadows.
-High dynamic range.
-Realistic depth of field.
-
-Preserve the person's identity and recognizable facial features
-as accurately as possible.
-
-Do not change the face shape, eyes, nose, lips, eyebrows,
-or natural facial proportions.
-
-Keep the person looking natural and recognizable.
-
-Photorealistic professional photography.
-
-No plastic skin.
-No artificial beauty filter.
-No CGI.
-"""
-    }
 }
 
 
-# ==========================================
-# РАБОТА С ПРОМТАМИ
-# ==========================================
-
-def load_prompts():
-
-    if not os.path.exists(PROMPTS_FILE):
-
-        save_prompts(DEFAULT_PROMPTS)
-
-        return DEFAULT_PROMPTS
-
-    try:
-
-        with open(
-            PROMPTS_FILE,
-            "r",
-            encoding="utf-8"
-        ) as file:
-
-            data = json.load(file)
-
-            return data
-
-    except Exception:
-
-        return DEFAULT_PROMPTS
-
-
-def save_prompts(data):
-
-    with open(
-        PROMPTS_FILE,
-        "w",
-        encoding="utf-8"
-    ) as file:
-
-        json.dump(
-            data,
-            file,
-            ensure_ascii=False,
-            indent=2
-        )
-
-
-# ==========================================
-# ГЛАВНОЕ МЕНЮ
-# ==========================================
+# =========================
+# МЕНЮ
+# =========================
 
 def main_menu():
-
-    prompts = load_prompts()
-
-    buttons = []
-
-    items = list(prompts.items())
-
-    for i in range(0, len(items), 2):
-
-        row = []
-
-        for key, data in items[i:i + 2]:
-
-            row.append(
-                InlineKeyboardButton(
-                    data["name"],
-                    callback_data=f"style_{key}"
-                )
-            )
-
-        buttons.append(row)
-
-    return InlineKeyboardMarkup(buttons)
-
-
-# ==========================================
-# START
-# ==========================================
-
-async def start(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE
-):
-
-    context.user_data.clear()
-
-    text = (
-        "✨ AI PHOTO STUDIO\n\n"
-        "Создай профессиональную фотосессию "
-        "с помощью AI.\n\n"
-        "Выбери стиль 👇"
-    )
-
-    await update.message.reply_text(
-        text,
-        reply_markup=main_menu()
-    )
-
-
-# ==========================================
-# АДМИН-МЕНЮ
-# ==========================================
-
-def admin_menu():
-
     keyboard = [
-
         [
-            InlineKeyboardButton(
-                "➕ Добавить стиль",
-                callback_data="admin_add"
-            )
+            InlineKeyboardButton("🍂 Осенняя", callback_data="autumn"),
+            InlineKeyboardButton("💎 Luxury", callback_data="luxury"),
         ],
-
         [
-            InlineKeyboardButton(
-                "📋 Мои стили",
-                callback_data="admin_list"
-            )
+            InlineKeyboardButton("👠 Fashion", callback_data="fashion"),
+            InlineKeyboardButton("❤️ Love Story", callback_data="love"),
         ],
-
         [
-            InlineKeyboardButton(
-                "✏️ Изменить промт",
-                callback_data="admin_edit"
-            )
+            InlineKeyboardButton("🌸 Romantic", callback_data="romantic"),
+            InlineKeyboardButton("🖤 Black Editorial", callback_data="black"),
         ],
-
         [
-            InlineKeyboardButton(
-                "🗑 Удалить стиль",
-                callback_data="admin_delete"
-            )
+            InlineKeyboardButton("👶 Детская фотосессия", callback_data="children"),
         ],
-
         [
-            InlineKeyboardButton(
-                "🏠 Главное меню",
-                callback_data="main_menu"
-            )
-        ]
+            InlineKeyboardButton("🤵 Мужская фотосессия", callback_data="men"),
+        ],
     ]
 
     return InlineKeyboardMarkup(keyboard)
 
 
-async def admin_command(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE
-):
+# =========================
+# START
+# =========================
 
-    if update.effective_user.id != ADMIN_ID:
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-        return
+    context.user_data["style"] = None
 
     await update.message.reply_text(
-        "⚙️ АДМИН-ПАНЕЛЬ\n\n"
-        "Здесь ты можешь управлять своими фотосессиями.",
-        reply_markup=admin_menu()
+        "✨ Добро пожаловать в AI Photo Gallery!\n\n"
+        "Выбери фотосессию 👇\n\n"
+        "После выбора просто отправь фотографию 📸\n"
+        "Промт писать не нужно — я всё сделаю сама ❤️",
+        reply_markup=main_menu()
     )
 
 
-# ==========================================
-# ОБРАБОТКА КНОПОК
-# ==========================================
+# =========================
+# НАЖАТИЕ КНОПКИ
+# =========================
 
-async def button_handler(
+async def button_click(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
 ):
@@ -502,330 +303,32 @@ async def button_handler(
 
     await query.answer()
 
-    data = query.data
-
-    # Главное меню
-
-    if data == "main_menu":
-
-        await query.message.edit_text(
-            "✨ Выбери стиль фотосессии:",
-            reply_markup=main_menu()
-        )
-
-        return
-
-
-    # Админка
-
-    if data.startswith("admin_"):
-
-        if query.from_user.id != ADMIN_ID:
-
-            return
-
-
-    if data == "admin_panel":
-
-        await query.message.edit_text(
-            "⚙️ АДМИН-ПАНЕЛЬ",
-            reply_markup=admin_menu()
-        )
-
-        return
-
-
-    # Добавление
-
-    if data == "admin_add":
-
-        context.user_data["admin_action"] = "add_name"
-
-        await query.message.reply_text(
-            "➕ Добавляем новую фотосессию.\n\n"
-            "Напиши название.\n\n"
-            "Например:\n"
-            "🌹 Красная роза"
-        )
-
-        return
-
-
-    # Список
-
-    if data == "admin_list":
-
-        prompts = load_prompts()
-
-        text = "📋 Твои фотосессии:\n\n"
-
-        for key, item in prompts.items():
-
-            text += f"• {item['name']}\n"
-
-        await query.message.edit_text(
-            text,
-            reply_markup=admin_menu()
-        )
-
-        return
-
-
-    # Редактирование
-
-    if data == "admin_edit":
-
-        prompts = load_prompts()
-
-        keyboard = []
-
-        for key, item in prompts.items():
-
-            keyboard.append([
-                InlineKeyboardButton(
-                    item["name"],
-                    callback_data=f"edit_{key}"
-                )
-            ])
-
-        keyboard.append([
-            InlineKeyboardButton(
-                "⬅️ Назад",
-                callback_data="admin_panel"
-            )
-        ])
-
-        await query.message.edit_text(
-            "✏️ Выбери стиль:",
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-
-        return
-
-
-    # Удаление
-
-    if data == "admin_delete":
-
-        prompts = load_prompts()
-
-        keyboard = []
-
-        for key, item in prompts.items():
-
-            keyboard.append([
-                InlineKeyboardButton(
-                    f"🗑 {item['name']}",
-                    callback_data=f"delete_{key}"
-                )
-            ])
-
-        keyboard.append([
-            InlineKeyboardButton(
-                "⬅️ Назад",
-                callback_data="admin_panel"
-            )
-        ])
-
-        await query.message.edit_text(
-            "🗑 Выбери стиль для удаления:",
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-
-        return
-
-
-    # Выбор стиля клиентом
-
-    if data.startswith("style_"):
-
-        style = data.replace(
-            "style_",
-            "",
-            1
-        )
-
-        prompts = load_prompts()
-
-        if style not in prompts:
-
-            await query.message.reply_text(
-                "Этот стиль пока недоступен."
-            )
-
-            return
-
-        context.user_data["style"] = style
-        context.user_data["waiting_photo"] = True
-
-        await query.message.reply_text(
-            f"{prompts[style]['name']}\n\n"
-            "📸 Теперь отправь фотографию.\n\n"
-            "Я автоматически применю выбранный стиль "
-            "и постараюсь максимально сохранить твоё лицо."
-        )
-
-        return
-
-
-    # Редактирование выбранного
-
-    if data.startswith("edit_"):
-
-        key = data.replace(
-            "edit_",
-            "",
-            1
-        )
-
-        context.user_data["admin_action"] = "edit_prompt"
-        context.user_data["edit_key"] = key
-
-        await query.message.reply_text(
-            "✏️ Отправь новый промт для этой фотосессии.\n\n"
-            "Можно вставить большой промт целиком."
-        )
-
-        return
-
-
-    # Удаление выбранного
-
-    if data.startswith("delete_"):
-
-        key = data.replace(
-            "delete_",
-            "",
-            1
-        )
-
-        prompts = load_prompts()
-
-        if key in prompts:
-
-            deleted_name = prompts[key]["name"]
-
-            del prompts[key]
-
-            save_prompts(prompts)
-
-            await query.message.edit_text(
-                f"🗑 Удалено:\n{deleted_name}",
-                reply_markup=admin_menu()
-            )
-
-        return
-
-
-# ==========================================
-# ТЕКСТОВЫЕ СООБЩЕНИЯ АДМИНА
-# ==========================================
-
-async def handle_text(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE
-):
-
-    if update.effective_user.id != ADMIN_ID:
-
-        return
-
-
-    action = context.user_data.get(
-        "admin_action"
+    style = query.data
+
+    context.user_data["style"] = style
+
+    names = {
+        "autumn": "🍂 Осенняя фотосессия",
+        "luxury": "💎 Luxury",
+        "fashion": "👠 Fashion",
+        "love": "❤️ Love Story",
+        "romantic": "🌸 Romantic",
+        "black": "🖤 Black Editorial",
+        "children": "👶 Детская фотосессия",
+        "men": "🤵 Мужская фотосессия",
+    }
+
+    await query.message.reply_text(
+        f"Выбрано: {names.get(style, 'Фотосессия')} ✨\n\n"
+        "Теперь отправь фотографию 📸\n\n"
+        "Лучше отправлять оригинальное фото "
+        "как файл, чтобы сохранить максимум качества."
     )
 
 
-    # Название нового стиля
-
-    if action == "add_name":
-
-        context.user_data["new_name"] = (
-            update.message.text
-        )
-
-        context.user_data["admin_action"] = (
-            "add_prompt"
-        )
-
-        await update.message.reply_text(
-            "Отлично 👍\n\n"
-            "Теперь отправь сам промт.\n\n"
-            "Можно вставить его полностью."
-        )
-
-        return
-
-
-    # Промт нового стиля
-
-    if action == "add_prompt":
-
-        name = context.user_data.get(
-            "new_name"
-        )
-
-        prompt = update.message.text
-
-        key = (
-            "custom_"
-            + str(update.effective_user.id)
-            + "_"
-            + str(len(load_prompts()) + 1)
-        )
-
-        prompts = load_prompts()
-
-        prompts[key] = {
-            "name": name,
-            "prompt": prompt
-        }
-
-        save_prompts(prompts)
-
-        context.user_data.clear()
-
-        await update.message.reply_text(
-            "✅ Готово!\n\n"
-            f"{name}\n\n"
-            "Фотосессия добавлена в меню.",
-            reply_markup=main_menu()
-        )
-
-        return
-
-
-    # Новый промт существующего стиля
-
-    if action == "edit_prompt":
-
-        key = context.user_data.get(
-            "edit_key"
-        )
-
-        prompts = load_prompts()
-
-        if key in prompts:
-
-            prompts[key]["prompt"] = (
-                update.message.text
-            )
-
-            save_prompts(prompts)
-
-            context.user_data.clear()
-
-            await update.message.reply_text(
-                "✅ Промт успешно изменён.",
-                reply_markup=admin_menu()
-            )
-
-        return
-
-
-# ==========================================
+# =========================
 # ОБРАБОТКА ФОТО
-# ==========================================
+# =========================
 
 async def handle_photo(
     update: Update,
@@ -834,39 +337,20 @@ async def handle_photo(
 
     message = update.message
 
-    style = context.user_data.get(
-        "style"
-    )
+    style = context.user_data.get("style")
 
     if not style:
-
         await message.reply_text(
-            "Сначала выбери стиль 👇",
+            "Сначала выбери фотосессию 👇",
             reply_markup=main_menu()
         )
-
         return
-
-
-    prompts = load_prompts()
-
-    if style not in prompts:
-
-        await message.reply_text(
-            "Этот стиль больше недоступен."
-        )
-
-        return
-
 
     await message.reply_text(
-        "📸 Фотография получена!\n\n"
-        "✨ Сохраняю лицо\n"
-        "✨ Применяю выбранный стиль\n"
-        "✨ Улучшаю фотографию\n\n"
-        "Немного подожди ❤️"
+        "📸 Обрабатываю фотографию...\n\n"
+        "Сохраняю лицо и улучшаю качество ✨\n"
+        "Подожди немного ❤️"
     )
-
 
     try:
 
@@ -874,21 +358,11 @@ async def handle_photo(
 
             photo = message.photo[-1]
 
-            telegram_file = (
-                await photo.get_file()
-            )
+            telegram_file = await photo.get_file()
 
-        elif (
-            message.document
-            and message.document.mime_type
-            and message.document.mime_type.startswith(
-                "image/"
-            )
-        ):
+        elif message.document and message.document.mime_type:
 
-            telegram_file = (
-                await message.document.get_file()
-            )
+            telegram_file = await message.document.get_file()
 
         else:
 
@@ -898,84 +372,83 @@ async def handle_photo(
 
             return
 
+        image_bytes = await telegram_file.download_as_bytearray()
 
-        image_bytes = (
-            await telegram_file.download_as_bytearray()
-        )
-
-
-        image_file = io.BytesIO(
-            image_bytes
-        )
+        image_file = io.BytesIO(image_bytes)
 
         image_file.name = "input.jpg"
 
-
-        prompt = prompts[style]["prompt"]
-
+        prompt = PROMPTS[style]
 
         result = client.images.edit(
-
             model="gpt-image-2",
-
             image=image_file,
-
             prompt=prompt,
-
-            size="1024x1536"
+            size="1024x1536",
         )
 
+        image_base64 = result.data[0].b64_json
 
-        image_base64 = (
-            result.data[0].b64_json
-        )
+        result_bytes = base64.b64decode(image_base64)
 
+        output = io.BytesIO(result_bytes)
 
-        result_bytes = base64.b64decode(
-            image_base64
-        )
-
+        output.name = "ai_photo.png"
 
         await message.reply_photo(
-
-            photo=io.BytesIO(
-                result_bytes
-            ),
-
+            photo=output,
             caption=(
-                "✨ Фотосессия готова!\n\n"
-                "Выбери следующий стиль 👇"
-            ),
+                "✨ Готово!\n\n"
+                "📸 Твоя профессиональная фотосессия."
+            )
+        )
 
+        # Возвращаем меню для следующей фотографии
+
+        await message.reply_text(
+            "Хочешь сделать ещё одну? 👇",
             reply_markup=main_menu()
         )
 
-
-        context.user_data["style"] = None
-
-
     except Exception as error:
 
-        print(
-            "ERROR:",
-            error
-        )
+        print("ERROR:", error)
 
         await message.reply_text(
             "❌ Не удалось обработать фотографию.\n\n"
-            "Попробуй ещё раз."
+            "Попробуй отправить её ещё раз."
         )
 
 
-# ==========================================
-# WEBHOOK
-# ==========================================
+# =========================
+# TELEGRAM HANDLERS
+# =========================
+
+telegram_app.add_handler(
+    CommandHandler("start", start)
+)
+
+telegram_app.add_handler(
+    CallbackQueryHandler(button_click)
+)
+
+telegram_app.add_handler(
+    MessageHandler(
+        filters.PHOTO | filters.Document.IMAGE,
+        handle_photo
+    )
+)
+
+
+# =========================
+# FASTAPI
+# =========================
 
 @app.get("/")
 async def home():
 
     return {
-        "status": "AI Photo Studio bot is running"
+        "status": "AI Photo Gallery bot is running"
     }
 
 
@@ -991,18 +464,14 @@ async def telegram_webhook(
         bot=telegram_app.bot
     )
 
-    await telegram_app.process_update(
-        update
-    )
+    await telegram_app.process_update(update)
 
-    return {
-        "ok": True
-    }
+    return {"ok": True}
 
 
-# ==========================================
+# =========================
 # STARTUP
-# ==========================================
+# =========================
 
 @app.on_event("startup")
 async def startup():
@@ -1011,12 +480,10 @@ async def startup():
 
     await telegram_app.start()
 
-
     render_url = os.environ.get(
         "RENDER_EXTERNAL_URL",
         ""
     ).rstrip("/")
-
 
     if render_url:
 
@@ -1034,9 +501,9 @@ async def startup():
         )
 
 
-# ==========================================
+# =========================
 # SHUTDOWN
-# ==========================================
+# =========================
 
 @app.on_event("shutdown")
 async def shutdown():
@@ -1046,9 +513,9 @@ async def shutdown():
     await telegram_app.shutdown()
 
 
-# ==========================================
+# =========================
 # RUN
-# ==========================================
+# =========================
 
 if __name__ == "__main__":
 
@@ -1063,4 +530,4 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=port
-    )  
+    )
