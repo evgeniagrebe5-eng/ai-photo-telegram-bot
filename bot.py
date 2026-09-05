@@ -559,23 +559,25 @@ async def callback_handler(
         )
         return
 
-        if data.startswith("channel_style:"):
-           key = data.split(":", 1)[1]
+            if data.startswith("channel_style:"):
+               key = data.split(":", 1)[1]
 
         if key not in SESSIONS:
-           await query.message.reply_text(
-             "❌ Фотосессия не найдена."
-           )
-           return
+            await query.message.reply_text(
+                "❌ Фотосессия не найдена."
+            )
+            return
 
         context.user_data["admin_state"] = "channel_caption"
         context.user_data["channel_style"] = key
+
         await query.message.reply_text(
             f"📢 Пост для:\n{SESSIONS[key]['title']}\n\n"
             "Теперь отправь текст поста."
         )
+
+        return
         
-        return 
     # Главное меню админа
     if data == "admin:home":
         context.user_data.clear()
