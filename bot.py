@@ -559,10 +559,10 @@ async def callback_handler(
         )
         return
 
-            if data.startswith("channel_style:"):
-               key = data.split(":", 1)[1]
+    if data.startswith("channel_style:"):
+       key = data.split(":", 1)[1]
 
-        if key not in SESSIONS:
+       if key not in SESSIONS:
             await query.message.reply_text(
                 "❌ Фотосессия не найдена."
             )
