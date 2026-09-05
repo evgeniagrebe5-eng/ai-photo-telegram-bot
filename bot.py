@@ -1,9 +1,9 @@
 import os
 import io
 import json
-import base64
 import asyncio
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from openai import OpenAI
@@ -27,352 +27,390 @@ from telegram.ext import (
 # НАСТРОЙКИ
 # =========================================================
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-ADMIN_ID = os.getenv("ADMIN_ID")
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO,
+)
+
+logger = logging.getLogger(__name__)
+
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+ADMIN_ID = os.environ.get("ADMIN_ID")
 
 if not BOT_TOKEN:
-    raise RuntimeError("BOT_TOKEN не найден")
+    raise RuntimeError("BOT_TOKEN is not set")
 
 if not OPENAI_API_KEY:
-    raise RuntimeError("OPENAI_API_KEY не найден")
+    raise RuntimeError("OPENAI_API_KEY is not set")
 
+if not ADMIN_ID:
+    raise RuntimeError("ADMIN_ID is not set")
 
-client = OpenAI(api_key=OPENAI_API_KEY)
-
-app = FastAPI()
-
-telegram_app = Application.builder().token(BOT_TOKEN).build()
-
-PROMPTS_FILE = "prompts.json"
+try:
+    ADMIN_ID = int(ADMIN_ID)
+except ValueError:
+    raise RuntimeError("ADMIN_ID must be a number")
 
 
 # =========================================================
-# ГОТОВЫЕ ФОТОСЕССИИ
+# OPENAI
+# =========================================================
+
+client = OpenAI(api_key=OPENAI_API_KEY)
+
+
+# =========================================================
+# ФОТОСЕССИИ ПО УМОЛЧАНИЮ
 # =========================================================
 
 DEFAULT_SESSIONS = {
     "autumn": {
         "title": "🍂 Осенняя",
         "prompt": """
-Create a photorealistic premium autumn fashion editorial photograph.
+Создай профессиональную фотореалистичную осеннюю fashion-фотосессию,
+используя загруженную фотографию человека как строгий референс личности.
 
-IMPORTANT:
-Preserve the person's identity from the uploaded reference photo.
-Do not change facial structure, facial proportions, eyes, nose, lips,
-eyebrows, skin tone, age or recognizable appearance.
+Сохрани идентичность человека максимально точно:
+форму лица, пропорции, глаза, нос, губы, брови и индивидуальные особенности.
+Не меняй возраст и внешность человека.
 
-Create a beautiful young woman in an elegant autumn fashion look
-surrounded by natural branches of red rowan berries and golden autumn
-foliage.
+Осенняя атмосфера, натуральная золотистая листва, теплые оттенки,
+красивая композиция, естественная поза, живое движение,
+дорогая fashion-съемка, реалистичная кожа с естественной текстурой,
+детальная одежда и волосы.
 
-The composition should feel dynamic and alive, like a professional
-fashion editorial action photograph rather than a static portrait.
+Профессиональная камера, физически корректный свет,
+мягкий естественный объемный свет, реалистичные тени,
+кинематографическая глубина резкости.
 
-Warm natural autumn atmosphere, rich red rowan berries, golden leaves,
-soft elegant clothing, realistic fabric texture.
-
-Professional full-frame camera photography, realistic skin texture,
-visible natural pores, detailed eyelashes and hair, physically accurate
-lighting, realistic shadows, cinematic depth of field, crisp details,
-HDR-quality image.
-
-No plastic skin, no beauty filter, no artificial face smoothing,
-no CGI appearance, no distorted anatomy, no extra fingers.
-"""
+Фотореализм высокого уровня.
+Без пластиковой кожи, без чрезмерного сглаживания,
+без изменения лица, без эффекта CGI, без мультяшности.
+""",
     },
 
     "luxury": {
         "title": "💎 Luxury",
         "prompt": """
-Create a photorealistic luxury fashion editorial portrait.
+Создай роскошную профессиональную fashion-фотографию человека
+на основе загруженного изображения.
 
-Preserve the person's identity from the uploaded reference photo exactly.
-Do not alter facial structure, facial proportions, eyes, nose, lips,
-eyebrows, skin tone, age or recognizable appearance.
+Максимально точно сохрани личность и черты лица человека.
+Не меняй форму лица, пропорции, глаза, нос, губы, брови
+и индивидуальные особенности внешности.
 
-Create an expensive sophisticated editorial atmosphere with elegant
-luxury styling, premium textures, refined fashion, subtle jewelry and
-an upscale cinematic environment.
+Эстетика luxury editorial:
+дорогой образ, премиальная атмосфера, изысканный интерьер,
+элегантная одежда, дорогие фактуры, стильная композиция.
 
-Soft dramatic studio lighting, controlled highlights and shadows,
-natural skin texture, realistic pores, detailed eyelashes, realistic
-hair and fabric.
+Профессиональная журнальная фотосъемка,
+реалистичная кожа, естественная текстура кожи,
+детальная ткань, реалистичные волосы.
 
-Professional full-frame fashion photography, shallow depth of field,
-high dynamic range, physically accurate light, extremely realistic
-details.
+Мягкий направленный студийный свет,
+глубокие естественные тени, красивый объем,
+профессиональная оптика, малая глубина резкости.
 
-Avoid plastic skin, excessive retouching, beauty filters, CGI,
-artificial smoothing or distorted anatomy.
-"""
+Очень высокий фотореализм.
+Без пластиковой кожи, beauty-фильтров,
+изменения личности, CGI и мультяшного эффекта.
+""",
     },
 
     "fashion": {
         "title": "👠 Fashion",
         "prompt": """
-Create a high-end professional fashion editorial photograph.
+Создай современную профессиональную fashion-фотографию
+на основе загруженного изображения человека.
 
-Preserve the person's identity from the uploaded reference image.
-Do not change facial structure, proportions, eyes, nose, lips,
-eyebrows, skin tone, age or recognizable appearance.
+Сохрани идентичность человека максимально точно.
+Не изменяй черты лица, пропорции и индивидуальные особенности.
 
-Create a confident modern fashion pose with sophisticated designer-style
-clothing and a premium editorial environment.
+Стиль современной fashion editorial съемки:
+уверенная поза, динамичная композиция,
+стильная одежда, дорогой fashion-образ,
+профессиональная постановка.
 
-The photograph should feel dynamic, stylish and contemporary,
-like a professional fashion campaign.
+Изображение должно выглядеть как настоящая съемка
+профессионального fashion-фотографа.
 
-Professional full-frame camera look, realistic skin pores,
-natural skin texture, detailed eyelashes, realistic hair and fabric,
-cinematic lighting, accurate shadows, realistic depth of field,
-high dynamic range and crisp details.
+Реалистичная кожа с естественной текстурой,
+детальная ткань, реалистичные волосы,
+естественные руки и пальцы.
 
-No plastic skin, no beauty filter, no face reshaping, no CGI,
-no artificial smoothing and no distorted anatomy.
-"""
+Профессиональный свет, объемные тени,
+реалистичная оптика, естественная глубина резкости.
+
+Максимальный фотореализм.
+Не использовать пластиковую кожу,
+чрезмерное сглаживание, CGI или мультяшность.
+""",
     },
 
     "love": {
         "title": "❤️ Love Story",
         "prompt": """
-Create a romantic photorealistic cinematic love-story photograph.
+Создай романтическую профессиональную фотографию
+в стиле Love Story на основе загруженного изображения.
 
-Preserve the identity of the person from the uploaded reference photo.
-Do not alter facial structure, facial proportions, eyes, nose, lips,
-eyebrows, skin tone, age or recognizable appearance.
+Если на референсе один человек, сохрани его идентичность максимально точно.
+Если присутствуют два человека, сохрани идентичность каждого.
 
-Create an emotional romantic scene with natural body language,
-warm atmosphere and authentic intimacy.
+Не изменяй черты лица, пропорции и индивидуальные особенности.
 
-Use beautiful cinematic evening light, soft highlights, realistic
-shadows and natural depth of field.
+Теплая романтическая атмосфера,
+естественные эмоции, живое взаимодействие,
+кинематографическая композиция,
+красивый естественный фон.
 
-Professional full-frame photography, realistic skin texture,
-natural pores, realistic eyelashes and hair, detailed clothing texture,
-physically accurate lighting and realistic colors.
+Профессиональная фотосъемка,
+мягкий естественный свет,
+реалистичная кожа, натуральная текстура,
+детальная одежда и волосы.
 
-The result must look like a real professional photography session,
-not an AI illustration.
-
-No plastic skin, no beauty filter, no excessive smoothing,
-no CGI appearance or distorted anatomy.
-"""
+Фотореализм высокого уровня.
+Без пластиковой кожи, beauty-фильтров,
+изменения лиц, CGI и мультяшности.
+""",
     },
 
     "romantic": {
         "title": "🌸 Romantic",
         "prompt": """
-Create a delicate photorealistic romantic fashion editorial portrait.
+Создай нежную романтическую fashion-фотографию
+на основе загруженного изображения человека.
 
-Preserve the person's exact recognizable identity from the reference.
-Do not change facial structure, proportions, eyes, nose, lips,
-eyebrows, skin tone, age or recognizable appearance.
+Сохрани идентичность человека максимально точно.
+Не изменяй форму лица, глаза, нос, губы, брови
+и другие индивидуальные особенности.
 
-Create an elegant feminine atmosphere with soft romantic styling,
-beautiful surroundings and natural graceful posing.
+Нежная романтическая атмосфера,
+элегантный образ, мягкие детали,
+естественная поза, воздушная композиция.
 
-Soft diffused cinematic lighting, delicate highlights,
-natural shadows and realistic depth of field.
+Профессиональная editorial фотосъемка,
+мягкий объемный свет,
+реалистичная кожа с естественной текстурой,
+реалистичные волосы и ткани.
 
-Professional full-frame camera photography, natural skin texture,
-realistic pores, eyelashes, hair and fabric details.
+Красивое естественное боке,
+профессиональная оптика,
+физически корректное освещение.
 
-The photograph must look authentic and professionally photographed.
-
-No plastic skin, beauty filter, artificial smoothing,
-CGI appearance or distorted anatomy.
-"""
+Максимальный фотореализм.
+Без пластиковой кожи, чрезмерного сглаживания,
+изменения лица, CGI и мультяшности.
+""",
     },
 
     "black": {
         "title": "🖤 Black Editorial",
         "prompt": """
-Create a dramatic high-fashion black editorial photograph.
+Создай профессиональную драматичную fashion editorial фотографию
+на основе загруженного изображения человека.
 
-Preserve the person's identity from the uploaded reference photo.
-Do not alter facial structure, proportions, eyes, nose, lips,
-eyebrows, skin tone, age or recognizable appearance.
+Максимально точно сохрани личность человека,
+его лицо, пропорции и индивидуальные особенности.
 
-Create a powerful sophisticated fashion editorial using a dark,
-minimal premium environment and elegant black styling.
+Черная эстетика editorial:
+темный стиль, элегантная одежда,
+минималистичная композиция,
+выразительная поза, дорогая fashion-атмосфера.
 
-Strong cinematic directional lighting, deep realistic shadows,
-controlled highlights and sophisticated contrast.
+Контрастный профессиональный свет,
+объемные естественные тени,
+кинематографическая глубина,
+реалистичная кожа и фактура одежды.
 
-Professional full-frame fashion photography, realistic skin pores,
-natural skin texture, detailed eyelashes, realistic hair and fabric,
-physically accurate light, realistic depth of field and crisp detail.
+Профессиональная full-frame камера,
+дорогая оптика, реалистичная глубина резкости.
 
-Luxury magazine editorial feeling.
-
-No plastic skin, no beauty filter, no excessive retouching,
-no CGI, no face distortion and no artificial smoothing.
-"""
+Максимальный фотореализм.
+Без изменения лица, пластиковой кожи,
+beauty-фильтров, CGI и мультяшности.
+""",
     },
 
     "child": {
         "title": "👶 Детская фотосессия",
         "prompt": """
-Create a beautiful photorealistic professional children's portrait.
+Создай профессиональную детскую фотосессию
+на основе загруженной фотографии ребенка.
 
-Preserve the child's recognizable identity from the uploaded reference
-photo. Do not change facial structure, facial proportions, eyes, nose,
-lips, eyebrows, skin tone, age or recognizable appearance.
+Максимально точно сохрани внешность и идентичность ребенка.
+Не изменяй лицо, форму глаз, нос, губы,
+пропорции лица и индивидуальные особенности.
 
-Create a warm professional children's fashion photoshoot with a natural,
-age-appropriate atmosphere.
+Создай красивую профессиональную фотосессию,
+естественную детскую позу и живые эмоции.
 
-Beautiful soft natural lighting, realistic skin texture,
-natural expressions, realistic clothing and environment.
+Мягкий красивый свет,
+естественная кожа с натуральной текстурой,
+реалистичные волосы и одежда,
+профессиональная композиция.
 
-Professional full-frame camera photography, realistic depth of field,
-physically accurate shadows and highlights, high dynamic range,
-crisp natural details.
+Изображение должно выглядеть как настоящая фотография,
+снятая профессиональным детским фотографом.
 
-The result must look like a real professional photograph.
-
-No adult appearance, no excessive makeup, no plastic skin,
-no beauty filter, no CGI, no artificial smoothing and no distorted anatomy.
-"""
+Без пластиковой кожи,
+без изменения внешности,
+без мультяшности и CGI.
+""",
     },
 
     "man": {
         "title": "🤵 Мужская фотосессия",
         "prompt": """
-Create a photorealistic premium men's fashion editorial portrait.
+Создай профессиональную мужскую fashion-фотосессию
+на основе загруженной фотографии.
 
-Preserve the person's exact recognizable identity from the uploaded
-reference photo.
+Максимально точно сохрани личность и внешность мужчины.
+Не изменяй лицо, пропорции, глаза, нос, губы,
+бороду и индивидуальные особенности.
 
-Do not change facial structure, facial proportions, eyes, nose, lips,
-eyebrows, skin tone, age or recognizable appearance.
+Стиль современной мужской editorial фотосъемки:
+уверенная естественная поза,
+дорогой мужской образ,
+стильная одежда,
+профессиональная композиция.
 
-Create a confident sophisticated masculine fashion portrait with
-premium clothing and cinematic editorial styling.
+Реалистичная кожа с естественной текстурой,
+детальная одежда,
+реалистичные волосы и борода.
 
-Professional full-frame camera photography, realistic skin pores,
-natural skin texture, realistic hair and clothing texture,
-physically accurate lighting, realistic shadows and highlights,
-cinematic depth of field and crisp details.
+Профессиональное освещение,
+объемные естественные тени,
+кинематографическая глубина резкости,
+дорогая оптика.
 
-The result should look like a real professional fashion photograph.
-
-No plastic skin, no beauty filter, no artificial smoothing,
-no CGI appearance and no distorted anatomy.
-"""
+Максимальный фотореализм.
+Без пластиковой кожи,
+beauty-фильтров, изменения лица,
+CGI и мультяшного эффекта.
+""",
     },
 }
 
 
 # =========================================================
-# РАБОТА С ФОТОСЕССИЯМИ
+# ХРАНЕНИЕ ПРОМТОВ
 # =========================================================
+
+PROMPTS_FILE = "prompts.json"
+
 
 def load_sessions():
     if not os.path.exists(PROMPTS_FILE):
+        save_sessions(DEFAULT_SESSIONS)
         return DEFAULT_SESSIONS.copy()
 
     try:
         with open(PROMPTS_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
 
-        if isinstance(data, dict) and data:
-            return data
+        if not data:
+            save_sessions(DEFAULT_SESSIONS)
+            return DEFAULT_SESSIONS.copy()
 
-    except Exception:
-        logging.exception("Ошибка чтения prompts.json")
+        return data
 
-    return DEFAULT_SESSIONS.copy()
+    except Exception as e:
+        logger.error("Error loading prompts.json: %s", e)
+        return DEFAULT_SESSIONS.copy()
 
 
-def save_sessions(sessions):
+def save_sessions(data):
     with open(PROMPTS_FILE, "w", encoding="utf-8") as f:
-        json.dump(
-            sessions,
-            f,
-            ensure_ascii=False,
-            indent=2
-        )
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
 
 SESSIONS = load_sessions()
 
 
 # =========================================================
-# ПРОВЕРКА АДМИНА
+# TELEGRAM APPLICATION
 # =========================================================
 
-def is_admin(user_id):
-    if not ADMIN_ID:
-        return False
-
-    try:
-        return int(user_id) == int(ADMIN_ID)
-    except Exception:
-        return False
+telegram_app = (
+    Application.builder()
+    .token(BOT_TOKEN)
+    .build()
+)
 
 
 # =========================================================
-# КЛИЕНТСКОЕ МЕНЮ
+# КЛАВИАТУРА КЛИЕНТА
 # =========================================================
 
 def client_keyboard():
     buttons = []
 
-    for session_id, session in SESSIONS.items():
+    for key, session in SESSIONS.items():
         buttons.append(
-            InlineKeyboardButton(
-                session["title"],
-                callback_data=f"style:{session_id}"
-            )
+            [
+                InlineKeyboardButton(
+                    session["title"],
+                    callback_data=f"style:{key}",
+                )
+            ]
         )
 
-    keyboard = []
-
-    for i in range(0, len(buttons), 2):
-        keyboard.append(buttons[i:i + 2])
-
-    return InlineKeyboardMarkup(keyboard)
+    return InlineKeyboardMarkup(buttons)
 
 
 # =========================================================
-# АДМИНСКОЕ МЕНЮ
+# КЛАВИАТУРА АДМИНИСТРАТОРА
 # =========================================================
 
 def admin_keyboard():
-    return InlineKeyboardMarkup([
+    return InlineKeyboardMarkup(
         [
-            InlineKeyboardButton(
-                "➕ Добавить фотосессию",
-                callback_data="admin:add"
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                "✏️ Изменить промт",
-                callback_data="admin:edit"
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                "🗑 Удалить фотосессию",
-                callback_data="admin:delete"
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                "📋 Мои фотосессии",
-                callback_data="admin:list"
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                "🏠 Главное меню",
-                callback_data="admin:home"
-            )
-        ],
-    ])
+            [
+                InlineKeyboardButton(
+                    "➕ Добавить фотосессию",
+                    callback_data="admin:add",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "✏️ Изменить промт",
+                    callback_data="admin:edit",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "🗑 Удалить фотосессию",
+                    callback_data="admin:delete",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "📋 Мои фотосессии",
+                    callback_data="admin:list",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "🏠 Главное меню",
+                    callback_data="admin:home",
+                )
+            ],
+        ]
+    )
+
+
+# =========================================================
+# ПРОВЕРКА АДМИНА
+# =========================================================
+
+def is_admin(update: Update):
+    user = update.effective_user
+
+    if not user:
+        return False
+
+    return user.id == ADMIN_ID
 
 
 # =========================================================
@@ -382,12 +420,16 @@ def admin_keyboard():
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
 
-    await update.message.reply_text(
+    text = (
         "✨ Добро пожаловать в AI Photo Gallery!\n\n"
         "Выбери фотосессию 👇\n\n"
         "После выбора просто отправь фотографию 📸\n"
-        "Промт писать не нужно — я всё сделаю сама ❤️",
-        reply_markup=client_keyboard()
+        "Промт писать не нужно — я всё сделаю сама ❤️"
+    )
+
+    await update.message.reply_text(
+        text,
+        reply_markup=client_keyboard(),
     )
 
 
@@ -396,11 +438,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # =========================================================
 
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-
-    if not is_admin(user_id):
+    if not is_admin(update):
         await update.message.reply_text(
-            "⛔ У тебя нет доступа к панели администратора."
+            "⛔ У вас нет доступа к админ-панели."
         )
         return
 
@@ -408,273 +448,277 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
         "👑 Панель администратора\n\n"
-        "Здесь ты можешь управлять фотосессиями и промтами.",
-        reply_markup=admin_keyboard()
+        "Выбери действие:",
+        reply_markup=admin_keyboard(),
     )
 
 
 # =========================================================
-# CALLBACK-КНОПКИ
+# CALLBACK
 # =========================================================
 
-async def callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def callback_handler(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
     query = update.callback_query
 
     await query.answer()
 
     data = query.data
-    user_id = query.from_user.id
 
     # -----------------------------------------------------
-    # КЛИЕНТ ВЫБРАЛ ФОТОСЕССИЮ
+    # ВЫБОР ФОТОСЕССИИ КЛИЕНТОМ
     # -----------------------------------------------------
 
     if data.startswith("style:"):
-        style_id = data.split(":", 1)[1]
+        key = data.split(":", 1)[1]
 
-        if style_id not in SESSIONS:
+        if key not in SESSIONS:
             await query.message.reply_text(
                 "❌ Эта фотосессия больше недоступна."
             )
             return
 
-        context.user_data["selected_style"] = style_id
+        context.user_data["selected_style"] = key
 
-        session_title = SESSIONS[style_id]["title"]
+        title = SESSIONS[key]["title"]
 
         await query.message.reply_text(
-            f"✨ Ты выбрала: {session_title}\n\n"
-            "Теперь просто отправь фотографию 📸\n"
-            "Промт писать не нужно ❤️"
+            f"{title}\n\n"
+            "Отлично ❤️\n"
+            "Теперь просто отправь свою фотографию 📸\n\n"
+            "Промт писать не нужно."
         )
 
         return
 
     # -----------------------------------------------------
-    # ПРОВЕРКА АДМИНА
+    # АДМИН
     # -----------------------------------------------------
 
-    if not is_admin(user_id):
-        await query.message.reply_text(
-            "⛔ Доступ запрещён."
-        )
+    if not is_admin(update):
         return
 
-    # -----------------------------------------------------
-    # АДМИН: ДОБАВИТЬ
-    # -----------------------------------------------------
+    # Главное меню админа
+    if data == "admin:home":
+        context.user_data.clear()
 
+        await query.message.reply_text(
+            "👑 Панель администратора\n\n"
+            "Выбери действие:",
+            reply_markup=admin_keyboard(),
+        )
+
+        return
+
+    # Добавление
     if data == "admin:add":
-        context.user_data["admin_action"] = "add_title"
+        context.user_data.clear()
+        context.user_data["admin_state"] = "add_title"
 
         await query.message.reply_text(
             "➕ Добавление фотосессии\n\n"
+            "Шаг 1 из 2.\n\n"
             "Напиши название новой фотосессии.\n\n"
             "Например:\n"
-            "🌹 Красная роза"
+            "🌊 Морская фотосессия"
         )
 
         return
 
-    # -----------------------------------------------------
-    # АДМИН: ИЗМЕНИТЬ
-    # -----------------------------------------------------
-
+    # Изменение
     if data == "admin:edit":
         if not SESSIONS:
             await query.message.reply_text(
-                "Нет доступных фотосессий."
+                "Пока нет фотосессий."
             )
             return
 
-        keyboard = []
+        buttons = []
 
-        for session_id, session in SESSIONS.items():
-            keyboard.append([
-                InlineKeyboardButton(
-                    session["title"],
-                    callback_data=f"edit:{session_id}"
-                )
-            ])
-
-        keyboard.append([
-            InlineKeyboardButton(
-                "⬅️ Назад",
-                callback_data="admin:back"
+        for key, session in SESSIONS.items():
+            buttons.append(
+                [
+                    InlineKeyboardButton(
+                        session["title"],
+                        callback_data=f"edit:{key}",
+                    )
+                ]
             )
-        ])
+
+        buttons.append(
+            [
+                InlineKeyboardButton(
+                    "🔙 Назад",
+                    callback_data="admin:home",
+                )
+            ]
+        )
 
         await query.message.reply_text(
             "✏️ Выбери фотосессию, промт которой нужно изменить:",
-            reply_markup=InlineKeyboardMarkup(keyboard)
+            reply_markup=InlineKeyboardMarkup(buttons),
         )
 
         return
 
-    # -----------------------------------------------------
-    # АДМИН: ВЫБОР ДЛЯ ИЗМЕНЕНИЯ
-    # -----------------------------------------------------
-
-    if data.startswith("edit:"):
-        style_id = data.split(":", 1)[1]
-
-        if style_id not in SESSIONS:
+    # Удаление
+    if data == "admin:delete":
+        if not SESSIONS:
             await query.message.reply_text(
-                "❌ Фотосессия не найдена."
+                "Пока нет фотосессий."
             )
             return
 
-        context.user_data["admin_action"] = "edit_prompt"
-        context.user_data["edit_style"] = style_id
+        buttons = []
 
-        await query.message.reply_text(
-            f"✏️ Изменение промта\n\n"
-            f"Фотосессия: {SESSIONS[style_id]['title']}\n\n"
-            "Теперь отправь новый промт одним сообщением."
-        )
-
-        return
-
-    # -----------------------------------------------------
-    # АДМИН: УДАЛЕНИЕ
-    # -----------------------------------------------------
-
-    if data == "admin:delete":
-        keyboard = []
-
-        for session_id, session in SESSIONS.items():
-            keyboard.append([
-                InlineKeyboardButton(
-                    session["title"],
-                    callback_data=f"delete:{session_id}"
-                )
-            ])
-
-        keyboard.append([
-            InlineKeyboardButton(
-                "⬅️ Назад",
-                callback_data="admin:back"
+        for key, session in SESSIONS.items():
+            buttons.append(
+                [
+                    InlineKeyboardButton(
+                        f"🗑 {session['title']}",
+                        callback_data=f"delete:{key}",
+                    )
+                ]
             )
-        ])
+
+        buttons.append(
+            [
+                InlineKeyboardButton(
+                    "🔙 Назад",
+                    callback_data="admin:home",
+                )
+            ]
+        )
 
         await query.message.reply_text(
             "🗑 Выбери фотосессию для удаления:",
-            reply_markup=InlineKeyboardMarkup(keyboard)
+            reply_markup=InlineKeyboardMarkup(buttons),
         )
 
         return
 
-    # -----------------------------------------------------
-    # ПОДТВЕРЖДЕНИЕ УДАЛЕНИЯ
-    # -----------------------------------------------------
-
-    if data.startswith("delete:"):
-        style_id = data.split(":", 1)[1]
-
-        if style_id not in SESSIONS:
-            await query.message.reply_text(
-                "❌ Фотосессия уже удалена."
-            )
-            return
-
-        title = SESSIONS[style_id]["title"]
-
-        del SESSIONS[style_id]
-        save_sessions(SESSIONS)
-
-        await query.message.reply_text(
-            f"🗑 Фотосессия «{title}» удалена.",
-            reply_markup=admin_keyboard()
-        )
-
-        return
-
-    # -----------------------------------------------------
-    # СПИСОК ФОТОСЕССИЙ
-    # -----------------------------------------------------
-
+    # Список
     if data == "admin:list":
         if not SESSIONS:
             text = "📋 Фотосессий пока нет."
         else:
             lines = ["📋 Твои фотосессии:\n"]
 
-            for number, session in enumerate(
+            for index, session in enumerate(
                 SESSIONS.values(),
-                start=1
+                start=1,
             ):
                 lines.append(
-                    f"{number}. {session['title']}"
+                    f"{index}. {session['title']}"
                 )
 
             text = "\n".join(lines)
 
         await query.message.reply_text(
             text,
-            reply_markup=admin_keyboard()
+            reply_markup=admin_keyboard(),
         )
 
         return
 
     # -----------------------------------------------------
-    # НАЗАД
+    # ВЫБРАНА ФОТОСЕССИЯ ДЛЯ РЕДАКТИРОВАНИЯ
     # -----------------------------------------------------
 
-    if data in ("admin:back", "admin:home"):
-        context.user_data.clear()
+    if data.startswith("edit:"):
+        key = data.split(":", 1)[1]
+
+        if key not in SESSIONS:
+            await query.message.reply_text(
+                "❌ Фотосессия не найдена."
+            )
+            return
+
+        context.user_data["admin_state"] = "edit_prompt"
+        context.user_data["edit_key"] = key
 
         await query.message.reply_text(
-            "👑 Панель администратора",
-            reply_markup=admin_keyboard()
+            f"✏️ Изменяем:\n"
+            f"{SESSIONS[key]['title']}\n\n"
+            "Отправь новый промт одним сообщением."
+        )
+
+        return
+
+    # -----------------------------------------------------
+    # ВЫБРАНА ФОТОСЕССИЯ ДЛЯ УДАЛЕНИЯ
+    # -----------------------------------------------------
+
+    if data.startswith("delete:"):
+        key = data.split(":", 1)[1]
+
+        if key not in SESSIONS:
+            await query.message.reply_text(
+                "❌ Фотосессия не найдена."
+            )
+            return
+
+        title = SESSIONS[key]["title"]
+
+        del SESSIONS[key]
+        save_sessions(SESSIONS)
+
+        await query.message.reply_text(
+            f"🗑 Удалено:\n{title}",
+            reply_markup=admin_keyboard(),
         )
 
         return
 
 
 # =========================================================
-# ТЕКСТ ОТ АДМИНА
+# ТЕКСТОВЫЕ СООБЩЕНИЯ АДМИНА
 # =========================================================
 
-async def admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-
-    if not is_admin(user_id):
+async def admin_text_handler(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    if not is_admin(update):
         return
 
-    action = context.user_data.get("admin_action")
+    state = context.user_data.get("admin_state")
+
+    if not state:
+        return
+
     text = update.message.text.strip()
 
     # -----------------------------------------------------
-    # НОВОЕ НАЗВАНИЕ
+    # НОВАЯ ФОТОСЕССИЯ — НАЗВАНИЕ
     # -----------------------------------------------------
 
-    if action == "add_title":
+    if state == "add_title":
         context.user_data["new_title"] = text
-        context.user_data["admin_action"] = "add_prompt"
+        context.user_data["admin_state"] = "add_prompt"
 
         await update.message.reply_text(
             "✅ Название сохранено.\n\n"
-            "Теперь отправь промт для этой фотосессии "
-            "одним сообщением."
+            "Шаг 2 из 2.\n\n"
+            "Теперь отправь промт для этой фотосессии."
         )
 
         return
 
     # -----------------------------------------------------
-    # НОВЫЙ ПРОМТ
+    # НОВАЯ ФОТОСЕССИЯ — ПРОМТ
     # -----------------------------------------------------
 
-    if action == "add_prompt":
+    if state == "add_prompt":
         title = context.user_data.get("new_title")
 
-        new_id = f"custom_{len(SESSIONS) + 1}"
+        key = f"custom_{len(SESSIONS) + 1}"
 
-        while new_id in SESSIONS:
-            new_id = f"custom_{len(SESSIONS) + 2}"
-
-        SESSIONS[new_id] = {
+        SESSIONS[key] = {
             "title": title,
-            "prompt": text
+            "prompt": text,
         }
 
         save_sessions(SESSIONS)
@@ -682,192 +726,167 @@ async def admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.clear()
 
         await update.message.reply_text(
-            "🎉 Готово!\n\n"
-            f"Новая фотосессия: {title}\n"
-            "Добавлена в меню клиентов.",
-            reply_markup=admin_keyboard()
+            f"✅ Новая фотосессия создана!\n\n"
+            f"{title}\n\n"
+            "Теперь она появилась в меню клиентов.",
+            reply_markup=admin_keyboard(),
         )
 
         return
 
     # -----------------------------------------------------
-    # ИЗМЕНЕНИЕ ПРОМТА
+    # РЕДАКТИРОВАНИЕ ПРОМТА
     # -----------------------------------------------------
 
-    if action == "edit_prompt":
-        style_id = context.user_data.get("edit_style")
+    if state == "edit_prompt":
+        key = context.user_data.get("edit_key")
 
-        if style_id not in SESSIONS:
+        if not key or key not in SESSIONS:
             context.user_data.clear()
 
             await update.message.reply_text(
-                "❌ Фотосессия не найдена."
+                "❌ Не удалось найти фотосессию.",
+                reply_markup=admin_keyboard(),
             )
+
             return
 
-        SESSIONS[style_id]["prompt"] = text
+        SESSIONS[key]["prompt"] = text
 
         save_sessions(SESSIONS)
 
-        title = SESSIONS[style_id]["title"]
+        title = SESSIONS[key]["title"]
 
         context.user_data.clear()
 
         await update.message.reply_text(
-            f"✅ Промт фотосессии «{title}» успешно изменён.",
-            reply_markup=admin_keyboard()
+            f"✅ Промт обновлён!\n\n"
+            f"{title}",
+            reply_markup=admin_keyboard(),
         )
 
         return
 
 
 # =========================================================
-# ОБРАБОТКА ФОТО
+# ГЕНЕРАЦИЯ ФОТО
 # =========================================================
 
-async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    style_id = context.user_data.get("selected_style")
+async def photo_handler(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    if not update.message:
+        return
 
-    if not style_id:
+    style = context.user_data.get("selected_style")
+
+    if not style:
         await update.message.reply_text(
             "Сначала выбери фотосессию 👇",
-            reply_markup=client_keyboard()
+            reply_markup=client_keyboard(),
         )
         return
 
-    if style_id not in SESSIONS:
+    if style not in SESSIONS:
         await update.message.reply_text(
-            "❌ Эта фотосессия больше недоступна."
+            "❌ Эта фотосессия больше недоступна.",
+            reply_markup=client_keyboard(),
         )
         return
 
-    prompt = SESSIONS[style_id]["prompt"]
+    session = SESSIONS[style]
+    prompt = session["prompt"]
 
     await update.message.reply_text(
-        "⏳ Обрабатываю фотографию...\n\n"
-        "Это может занять немного времени ❤️"
+        "📸 Фото получила!\n\n"
+        "✨ Начинаю обработку...\n"
+        "Это может занять некоторое время."
     )
 
     try:
-        photo = update.message.photo[-1]
+        telegram_file = await update.message.photo[-1].get_file()
 
-        telegram_file = await context.bot.get_file(
-            photo.file_id
-        )
+        photo_bytes = await telegram_file.download_as_bytearray()
 
-        image_bytes = await telegram_file.download_as_bytearray()
+        image_file = io.BytesIO(bytes(photo_bytes))
+        image_file.name = "photo.jpg"
 
-        image_file = io.BytesIO(bytes(image_bytes))
-        image_file.name = "input.jpg"
+        def generate_image():
+            return client.images.edit(
+                model="gpt-image-2",
+                image=image_file,
+                prompt=prompt,
+                size="1024x1536",
+            )
 
-        # OpenAI вызов выполняем в отдельном потоке,
-        # чтобы бот не зависал во время генерации.
         result = await asyncio.to_thread(
-            client.images.edit,
-            model="gpt-image-2",
-            image=image_file,
-            prompt=prompt,
-            size="1024x1536",
+            generate_image
         )
 
         if not result.data:
-            raise RuntimeError("OpenAI не вернул изображение")
+            raise RuntimeError(
+                "OpenAI returned no image"
+            )
 
-        image_data = result.data[0].b64_json
+        image_data = result.data[0]
 
-        if not image_data:
-            raise RuntimeError("В ответе нет изображения")
+        if not getattr(image_data, "b64_json", None):
+            raise RuntimeError(
+                "OpenAI returned no b64_json"
+            )
 
-        output_bytes = base64.b64decode(image_data)
+        import base64
 
-        output_file = io.BytesIO(output_bytes)
-        output_file.name = "ai_photo.png"
+        generated_bytes = base64.b64decode(
+            image_data.b64_json
+        )
+
+        output = io.BytesIO(generated_bytes)
+        output.name = "ai_photo.png"
 
         await update.message.reply_photo(
-            photo=output_file,
-            caption="✨ Готово!\n\n"
-                    "Если хочешь попробовать другой образ — "
-                    "выбери новую фотосессию 👇",
-            reply_markup=client_keyboard()
+            photo=output,
+            caption=(
+                f"✨ Готово!\n\n"
+                f"{session['title']}\n\n"
+                "Хочешь ещё фото? "
+                "Выбери другую фотосессию 👇"
+            ),
+            reply_markup=client_keyboard(),
         )
 
     except Exception as e:
-        logging.exception("Ошибка генерации")
+        logger.exception(
+            "Image generation error"
+        )
 
         await update.message.reply_text(
-            "😔 Не получилось создать фотографию.\n\n"
+            "😔 Не удалось создать фотографию.\n\n"
             "Попробуй отправить фото ещё раз."
         )
 
 
 # =========================================================
-# WEBHOOK
+# ОБРАБОТЧИК НЕПОНЯТНОГО ТЕКСТА
 # =========================================================
 
-@app.get("/")
-async def health():
-    return {
-        "status": "ok",
-        "bot": "AI Photo Gallery"
-    }
+async def unknown_text(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    if is_admin(update):
+        if context.user_data.get("admin_state"):
+            return
 
-
-@app.post("/telegram")
-async def telegram_webhook(request: Request):
-    data = await request.json()
-
-    update = Update.de_json(
-        data,
-        telegram_app.bot
-    )
-
-    await telegram_app.process_update(update)
-
-    return {"ok": True}
-
-
-# =========================================================
-# ЗАПУСК
-# =========================================================
-
-async def startup():
-    await telegram_app.initialize()
-    await telegram_app.start()
-
-    webhook_url = (
-        "https://ai-photo-telegram-bot.onrender.com/telegram"
-    )
-
-    await telegram_app.bot.set_webhook(
-        url=webhook_url,
-        drop_pending_updates=True
-    )
-
-    logging.info(
-        f"Webhook установлен: {webhook_url}"
+    await update.message.reply_text(
+        "Выбери фотосессию 👇",
+        reply_markup=client_keyboard(),
     )
 
 
-async def shutdown():
-    await telegram_app.bot.delete_webhook()
-
-    await telegram_app.stop()
-    await telegram_app.shutdown()
-
-
-app.add_event_handler(
-    "startup",
-    startup
-)
-
-app.add_event_handler(
-    "shutdown",
-    shutdown
-)
-
-
 # =========================================================
-# HANDLERS
+# РЕГИСТРАЦИЯ TELEGRAM HANDLERS
 # =========================================================
 
 telegram_app.add_handler(
@@ -879,45 +898,148 @@ telegram_app.add_handler(
 )
 
 telegram_app.add_handler(
-    CallbackQueryHandler(callbacks)
+    CallbackQueryHandler(callback_handler)
 )
 
 telegram_app.add_handler(
     MessageHandler(
         filters.PHOTO,
-        handle_photo
+        photo_handler,
     )
 )
 
 telegram_app.add_handler(
     MessageHandler(
         filters.TEXT & ~filters.COMMAND,
-        admin_text
+        admin_text_handler,
+    )
+)
+
+telegram_app.add_handler(
+    MessageHandler(
+        filters.TEXT & ~filters.COMMAND,
+        unknown_text,
     )
 )
 
 
 # =========================================================
-# ЛОГИ
+# FASTAPI LIFESPAN
 # =========================================================
 
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+
+    logger.info("Starting Telegram application...")
+
+    await telegram_app.initialize()
+    await telegram_app.start()
+
+    render_url = os.environ.get(
+        "RENDER_EXTERNAL_URL"
+    )
+
+    if render_url:
+        render_url = render_url.rstrip("/")
+
+        webhook_url = (
+            f"{render_url}/telegram"
+        )
+
+        await telegram_app.bot.set_webhook(
+            webhook_url
+        )
+
+        logger.info(
+            "Webhook set: %s",
+            webhook_url,
+        )
+
+    else:
+        logger.warning(
+            "RENDER_EXTERNAL_URL is not set"
+        )
+
+    logger.info(
+        "Telegram application started"
+    )
+
+    yield
+
+    logger.info(
+        "Stopping Telegram application..."
+    )
+
+    try:
+        await telegram_app.bot.delete_webhook()
+    except Exception:
+        logger.exception(
+            "Could not delete webhook"
+        )
+
+    await telegram_app.stop()
+    await telegram_app.shutdown()
+
+    logger.info(
+        "Telegram application stopped"
+    )
+
+
+# =========================================================
+# FASTAPI
+# =========================================================
+
+app = FastAPI(
+    lifespan=lifespan
 )
 
 
+@app.get("/")
+async def health():
+    return {
+        "status": "ok",
+        "bot": "AI Photo Gallery",
+    }
+
+
+@app.post("/telegram")
+async def telegram_webhook(request: Request):
+
+    data = await request.json()
+
+    update = Update.de_json(
+        data,
+        telegram_app.bot,
+    )
+
+    await telegram_app.process_update(
+        update
+    )
+
+    return {
+        "ok": True
+    }
+
+
 # =========================================================
-# UVICORN
+# ЗАПУСК
 # =========================================================
 
 if __name__ == "__main__":
+
     import uvicorn
 
-    port = int(os.environ.get("PORT", 10000))
+    port = int(
+        os.environ.get(
+            "PORT",
+            "10000",
+        )
+    )
 
     uvicorn.run(
         app,
         host="0.0.0.0",
-        port=port
+        port=port,
     )
+
+    
