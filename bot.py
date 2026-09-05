@@ -4,12 +4,13 @@ import base64
 
 from fastapi import FastAPI, Request
 from openai import OpenAI
-from prompts import get_session
+
 from telegram import (
     Update,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
 )
+
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -22,6 +23,10 @@ from telegram.ext import (
 import uvicorn
 
 
+# =========================================================
+# НАСТРОЙКИ
+# =========================================================
+
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
 
@@ -32,9 +37,9 @@ app = FastAPI()
 telegram_app = Application.builder().token(BOT_TOKEN).build()
 
 
-# =========================
+# =========================================================
 # ПРОМТЫ ФОТОСЕССИЙ
-# =========================
+# =========================================================
 
 PROMPTS = {
 
@@ -52,20 +57,29 @@ autumn foliage.
 Dynamic fashion editorial photography.
 Natural movement and elegant posing.
 Premium professional photography.
+
 Realistic skin texture and natural pores.
 Individual hair details.
 Detailed fabric texture.
+
 Beautiful natural autumn colors.
 Soft cinematic daylight.
 Physically realistic lighting and shadows.
+
 Professional full-frame camera look.
 Realistic depth of field.
+High dynamic range.
 Extremely detailed photorealistic image.
 
 Do not change the person's identity.
 Do not make the face look like another person.
-Avoid plastic skin, beauty filters, excessive smoothing,
-CGI appearance, artificial eyes or distorted features.
+
+Avoid plastic skin.
+Avoid beauty filters.
+Avoid excessive smoothing.
+Avoid CGI appearance.
+Avoid artificial eyes.
+Avoid distorted facial features.
 """,
 
     "luxury": """
@@ -77,13 +91,17 @@ Keep the exact natural face shape and proportions.
 Elegant luxury editorial styling.
 Sophisticated premium atmosphere.
 Expensive studio environment.
+
 Professional fashion photography.
+
 Natural realistic skin texture and pores.
 Fine eyelashes and realistic eyes.
 Detailed clothing and fabric texture.
+
 Controlled cinematic studio lighting.
 Beautiful highlights and natural shadows.
-Full-frame professional camera look.
+
+Professional full-frame camera look.
 High dynamic range.
 Realistic depth of field.
 Extremely detailed photorealistic result.
@@ -99,26 +117,35 @@ No CGI appearance.
 Create a professional high-fashion editorial photoshoot.
 
 Preserve the person's identity exactly.
-Do not change recognizable facial features or natural proportions.
+Do not change recognizable facial features
+or natural proportions.
 
 Modern fashion magazine editorial.
 Confident elegant pose.
 Dynamic professional fashion photography.
+
 Sophisticated styling and composition.
+
 Natural realistic skin texture.
 Visible fine skin details and pores.
 Detailed clothing texture.
+
 Professional studio and cinematic lighting.
-Natural shadows.
-Full-frame professional camera appearance.
+Natural realistic shadows.
+
+Professional full-frame camera appearance.
 High dynamic range.
 Realistic depth of field.
 Sharp fine details.
+
 Photorealistic premium quality.
 
 Do not change identity.
-Avoid plastic skin, excessive smoothing,
-beauty filters, distorted facial features or CGI.
+Avoid plastic skin.
+Avoid excessive smoothing.
+Avoid beauty filters.
+Avoid distorted facial features.
+Avoid CGI appearance.
 """,
 
     "love": """
@@ -130,18 +157,25 @@ Keep recognizable facial features and proportions.
 Elegant romantic cinematic atmosphere.
 Warm beautiful natural light.
 Emotional sophisticated photography.
+
 Natural body language and elegant posing.
+
 Premium professional photography.
+
 Realistic skin texture.
 Natural pores and fine details.
 Detailed clothing.
+
 Physically accurate lighting and shadows.
 Beautiful depth of field.
-Full-frame professional camera look.
+
+Professional full-frame camera look.
 Photorealistic high-end result.
 
 Do not change identity.
-Avoid artificial beauty filters or plastic skin.
+Avoid artificial beauty filters.
+Avoid plastic skin.
+Avoid excessive smoothing.
 """,
 
     "romantic": """
@@ -152,18 +186,23 @@ Preserve the person's identity and natural facial features.
 Soft romantic atmosphere.
 Elegant styling.
 Delicate cinematic lighting.
+
 Natural realistic skin texture.
 Natural pores and fine details.
+
 Professional editorial photography.
 Beautiful composition.
+
 Realistic shadows and highlights.
-Full-frame camera look.
+Professional full-frame camera look.
 Natural depth of field.
+
 Highly detailed photorealistic result.
 
 Do not change the person's identity.
 No artificial face changes.
-No plastic skin or excessive smoothing.
+No plastic skin.
+No excessive smoothing.
 """,
 
     "black": """
@@ -175,14 +214,18 @@ Do not alter recognizable facial features or proportions.
 Black luxury fashion editorial.
 Dark sophisticated atmosphere.
 Elegant powerful composition.
+
 Dramatic professional studio lighting.
 Deep realistic shadows.
 Controlled highlights.
+
 Natural skin texture and pores.
 Detailed clothing and fabric.
+
 Professional full-frame camera look.
 High dynamic range.
 Realistic depth of field.
+
 Extremely detailed photorealistic result.
 
 No plastic skin.
@@ -195,18 +238,23 @@ No CGI appearance.
 Create a professional children's portrait photoshoot.
 
 Preserve the child's identity exactly.
-Keep natural facial features, proportions and recognizable appearance.
+Keep natural facial features, proportions
+and recognizable appearance.
 
 Beautiful natural child photography.
 Warm elegant atmosphere.
 Natural age-appropriate styling.
 Authentic expression.
+
 Professional portrait photography.
 Soft natural lighting.
+
 Realistic skin texture.
 Natural pores and fine details.
 Detailed clothing.
+
 Beautiful realistic background.
+
 Professional full-frame camera look.
 Natural depth of field.
 High-quality photorealistic result.
@@ -214,85 +262,132 @@ High-quality photorealistic result.
 Do not make the child look older.
 Do not change identity.
 Do not use artificial beauty filters.
-Avoid plastic skin and CGI appearance.
+Avoid plastic skin.
+Avoid CGI appearance.
 """,
 
     "men": """
 Create a premium professional men's fashion portrait.
 
 Preserve the person's identity exactly.
+
 Keep facial structure, eyes, nose, lips,
 eyebrows and natural proportions unchanged.
 
 Confident masculine editorial style.
 Modern luxury fashion photography.
 Sophisticated professional atmosphere.
+
 Natural realistic skin texture and pores.
 Detailed clothing and fabric.
+
 Professional studio or cinematic lighting.
 Natural shadows.
-Full-frame professional camera look.
+
+Professional full-frame camera look.
 High dynamic range.
 Realistic depth of field.
 Crisp fine details.
+
 Photorealistic premium quality.
 
 Do not change the person's identity.
-Avoid plastic skin, excessive smoothing,
-beauty filters, distorted facial features or CGI.
+Avoid plastic skin.
+Avoid excessive smoothing.
+Avoid beauty filters.
+Avoid distorted facial features.
+Avoid CGI appearance.
 """
 }
 
 
-# =========================
-# МЕНЮ
-# =========================
+# =========================================================
+# ГЛАВНОЕ МЕНЮ
+# =========================================================
 
 def main_menu():
+
     keyboard = [
+
         [
-            InlineKeyboardButton("🍂 Осенняя", callback_data="autumn"),
-            InlineKeyboardButton("💎 Luxury", callback_data="luxury"),
+            InlineKeyboardButton(
+                "🍂 Осенняя",
+                callback_data="autumn"
+            ),
+            InlineKeyboardButton(
+                "💎 Luxury",
+                callback_data="luxury"
+            ),
         ],
+
         [
-            InlineKeyboardButton("👠 Fashion", callback_data="fashion"),
-            InlineKeyboardButton("❤️ Love Story", callback_data="love"),
+            InlineKeyboardButton(
+                "👠 Fashion",
+                callback_data="fashion"
+            ),
+            InlineKeyboardButton(
+                "❤️ Love Story",
+                callback_data="love"
+            ),
         ],
+
         [
-            InlineKeyboardButton("🌸 Romantic", callback_data="romantic"),
-            InlineKeyboardButton("🖤 Black Editorial", callback_data="black"),
+            InlineKeyboardButton(
+                "🌸 Romantic",
+                callback_data="romantic"
+            ),
+            InlineKeyboardButton(
+                "🖤 Black Editorial",
+                callback_data="black"
+            ),
         ],
+
         [
-            InlineKeyboardButton("👶 Детская фотосессия", callback_data="children"),
+            InlineKeyboardButton(
+                "👶 Детская фотосессия",
+                callback_data="children"
+            ),
         ],
+
         [
-            InlineKeyboardButton("🤵 Мужская фотосессия", callback_data="men"),
+            InlineKeyboardButton(
+                "🤵 Мужская фотосессия",
+                callback_data="men"
+            ),
         ],
     ]
 
     return InlineKeyboardMarkup(keyboard)
 
 
-# =========================
+# =========================================================
 # START
-# =========================
+# =========================================================
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def start(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
 
     context.user_data["style"] = None
 
     await update.message.reply_text(
+
         "✨ Добро пожаловать в AI Photo Gallery!\n\n"
+
         "Выбери фотосессию 👇\n\n"
+
         "После выбора просто отправь фотографию 📸\n"
+
         "Промт писать не нужно — я всё сделаю сама ❤️",
+
         reply_markup=main_menu()
     )
 
 
-# =========================
-# НАЖАТИЕ КНОПКИ
-# =========================
+# =========================================================
+# НАЖАТИЕ КНОПКИ ФОТОСЕССИИ
+# =========================================================
 
 async def button_click(
     update: Update,
@@ -305,30 +400,59 @@ async def button_click(
 
     style = query.data
 
+    if style not in PROMPTS:
+
+        await query.message.reply_text(
+            "❌ Не удалось определить фотосессию.\n\n"
+            "Выбери её ещё раз 👇",
+            reply_markup=main_menu()
+        )
+
+        return
+
     context.user_data["style"] = style
 
     names = {
-        "autumn": "🍂 Осенняя фотосессия",
-        "luxury": "💎 Luxury",
-        "fashion": "👠 Fashion",
-        "love": "❤️ Love Story",
-        "romantic": "🌸 Romantic",
-        "black": "🖤 Black Editorial",
-        "children": "👶 Детская фотосессия",
-        "men": "🤵 Мужская фотосессия",
+
+        "autumn":
+            "🍂 Осенняя фотосессия",
+
+        "luxury":
+            "💎 Luxury",
+
+        "fashion":
+            "👠 Fashion",
+
+        "love":
+            "❤️ Love Story",
+
+        "romantic":
+            "🌸 Romantic",
+
+        "black":
+            "🖤 Black Editorial",
+
+        "children":
+            "👶 Детская фотосессия",
+
+        "men":
+            "🤵 Мужская фотосессия",
     }
 
     await query.message.reply_text(
+
         f"Выбрано: {names.get(style, 'Фотосессия')} ✨\n\n"
+
         "Теперь отправь фотографию 📸\n\n"
+
         "Лучше отправлять оригинальное фото "
         "как файл, чтобы сохранить максимум качества."
     )
 
 
-# =========================
-# ОБРАБОТКА ФОТО
-# =========================
+# =========================================================
+# ОБРАБОТКА ФОТОГРАФИИ
+# =========================================================
 
 async def handle_photo(
     update: Update,
@@ -339,20 +463,57 @@ async def handle_photo(
 
     style = context.user_data.get("style")
 
+    # -----------------------------------------------------
+    # Если фотосессия не выбрана
+    # -----------------------------------------------------
+
     if not style:
+
         await message.reply_text(
+
             "Сначала выбери фотосессию 👇",
+
             reply_markup=main_menu()
         )
+
         return
 
+    # -----------------------------------------------------
+    # Проверяем наличие промта
+    # -----------------------------------------------------
+
+    prompt = PROMPTS.get(style)
+
+    if not prompt:
+
+        await message.reply_text(
+
+            "❌ Не удалось найти промт этой фотосессии.\n\n"
+            "Выбери фотосессию ещё раз 👇",
+
+            reply_markup=main_menu()
+        )
+
+        return
+
+    # -----------------------------------------------------
+    # Сообщение пользователю
+    # -----------------------------------------------------
+
     await message.reply_text(
+
         "📸 Обрабатываю фотографию...\n\n"
+
         "Сохраняю лицо и улучшаю качество ✨\n"
+
         "Подожди немного ❤️"
     )
 
     try:
+
+        # -------------------------------------------------
+        # Получаем Telegram-файл
+        # -------------------------------------------------
 
         if message.photo:
 
@@ -367,89 +528,140 @@ async def handle_photo(
         else:
 
             await message.reply_text(
+
                 "Пожалуйста, отправь фотографию 📷"
             )
 
             return
 
-        image_bytes = await telegram_file.download_as_bytearray()
+        # -------------------------------------------------
+        # Скачиваем изображение
+        # -------------------------------------------------
+
+        image_bytes = (
+            await telegram_file.download_as_bytearray()
+        )
+
+        # -------------------------------------------------
+        # Создаём файл для OpenAI
+        # -------------------------------------------------
 
         image_file = io.BytesIO(image_bytes)
 
         image_file.name = "input.jpg"
 
-session = get_session(style)
- = session["prompt"] if session and session.get("prompt") else PROMPTS[style]
+        # -------------------------------------------------
+        # Генерация изображения
+        # -------------------------------------------------
 
-        result = await client.images.edit(
+        result = client.images.edit(
+
             model="gpt-image-2",
+
             image=image_file,
+
             prompt=prompt,
+
             size="1024x1536",
         )
 
+        # -------------------------------------------------
+        # Получаем результат
+        # -------------------------------------------------
+
         image_base64 = result.data[0].b64_json
 
-        result_bytes = base64.b64decode(image_base64)
+        result_bytes = base64.b64decode(
+            image_base64
+        )
 
         output = io.BytesIO(result_bytes)
 
         output.name = "ai_photo.png"
 
+        # -------------------------------------------------
+        # Отправляем результат
+        # -------------------------------------------------
+
         await message.reply_photo(
+
             photo=output,
+
             caption=(
                 "✨ Готово!\n\n"
                 "📸 Твоя профессиональная фотосессия."
             )
         )
 
-        # Возвращаем меню для следующей фотографии
+        # -------------------------------------------------
+        # Возвращаем меню
+        # -------------------------------------------------
 
         await message.reply_text(
+
             "Хочешь сделать ещё одну? 👇",
+
             reply_markup=main_menu()
         )
 
     except Exception as error:
 
-        print("ERROR:", error)
+        print(
+            "ERROR:",
+            repr(error)
+        )
 
         await message.reply_text(
+
             "❌ Не удалось обработать фотографию.\n\n"
+
             "Попробуй отправить её ещё раз."
         )
 
 
-# =========================
+# =========================================================
 # TELEGRAM HANDLERS
-# =========================
+# =========================================================
 
 telegram_app.add_handler(
-    CommandHandler("start", start)
+
+    CommandHandler(
+        "start",
+        start
+    )
 )
 
-telegram_app.add_handler(
-    CallbackQueryHandler(button_click)
-)
 
 telegram_app.add_handler(
+
+    CallbackQueryHandler(
+        button_click
+    )
+)
+
+
+telegram_app.add_handler(
+
     MessageHandler(
+
         filters.PHOTO | filters.Document.IMAGE,
+
         handle_photo
     )
 )
 
 
-# =========================
+# =========================================================
 # FASTAPI
-# =========================
+# =========================================================
 
 @app.get("/")
 async def home():
 
     return {
-        "status": "AI Photo Gallery bot is running"
+
+        "status":
+            "AI Photo Gallery bot is running"
     }
 
 
@@ -461,18 +673,24 @@ async def telegram_webhook(
     data = await request.json()
 
     update = Update.de_json(
+
         data=data,
+
         bot=telegram_app.bot
     )
 
-    await telegram_app.process_update(update)
+    await telegram_app.process_update(
+        update
+    )
 
-    return {"ok": True}
+    return {
+        "ok": True
+    }
 
 
-# =========================
+# =========================================================
 # STARTUP
-# =========================
+# =========================================================
 
 @app.on_event("startup")
 async def startup():
@@ -502,9 +720,9 @@ async def startup():
         )
 
 
-# =========================
+# =========================================================
 # SHUTDOWN
-# =========================
+# =========================================================
 
 @app.on_event("shutdown")
 async def shutdown():
@@ -514,13 +732,14 @@ async def shutdown():
     await telegram_app.shutdown()
 
 
-# =========================
+# =========================================================
 # RUN
-# =========================
+# =========================================================
 
 if __name__ == "__main__":
 
     port = int(
+
         os.environ.get(
             "PORT",
             "10000"
@@ -528,7 +747,10 @@ if __name__ == "__main__":
     )
 
     uvicorn.run(
+
         app,
+
         host="0.0.0.0",
+
         port=port
-    )
+)                    
