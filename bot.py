@@ -379,7 +379,7 @@ async def handle_photo(
         image_file.name = "input.jpg"
 
 session = get_session(style)
-prompt = session["prompt"] if session and session.get("prompt") else PROMPTS[style]
+ = session["prompt"] if session and session.get("prompt") else PROMPTS[style]
 
         result = await client.images.edit(
             model="gpt-image-2",
