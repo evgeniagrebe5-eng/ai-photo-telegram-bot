@@ -513,7 +513,7 @@ async def callback_handler(
         title = SESSIONS[key]["title"]
 
         await query.message.reply_text(
-            f"{title}\n\n"
+             f"{title}\n\n"
             "Отлично ❤️\n"
             "Теперь просто отправь свою фотографию 📸\n\n"
             "Промт писать не нужно."
@@ -560,7 +560,7 @@ async def callback_handler(
         return
 
     if data.startswith("channel_style:"):
-       key = data.split(":", 1)[1]
+         key = data.split(":", 1)[1]
 
        if key not in SESSIONS:
             await query.message.reply_text(
