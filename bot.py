@@ -420,11 +420,33 @@ def is_admin(update: Update):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
 
+    # Если человек пришёл по специальной ссылке
+    if context.args:
+        style = context.args[0]
+
+        if style in SESSIONS:
+            context.user_data["selected_style"] = style
+
+            title = SESSIONS[style]["title"]
+
+            await update.message.reply_text(
+                f"✨ Выбрана фотосессия:\n\n"
+                f"{title}\n\n"
+                f"📸 Теперь просто отправь свою фотографию.\n"
+                f"Промт писать не нужно — я всё сделаю сама ❤️"
+            )
+            return
+
     text = (
         "✨ Добро пожаловать в AI Photo Gallery!\n\n"
         "Выбери фотосессию 👇\n\n"
         "После выбора просто отправь фотографию 📸\n"
         "Промт писать не нужно — я всё сделаю сама ❤️"
+    )
+
+    await update.message.reply_text(
+        text,
+        reply_markup=client_keyboard(),
     )
 
     await update.message.reply_text(
