@@ -378,7 +378,7 @@ async def handle_photo(
 
         image_file.name = "input.jpg"
 
-    session = get_session(style)
+session = get_session(style)
 prompt = session["prompt"] if session and session.get("prompt") else PROMPTS[style]
 
         result = client.images.edit(
