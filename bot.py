@@ -563,8 +563,10 @@ async def callback_handler(
            key = data.split(":", 1)[1]
 
         if key not in SESSIONS:
-           wait query.message.reply_text("❌ Фотосессия не найдена.")
-            return
+           await query.message.reply_text(
+             "❌ Фотосессия не найдена."
+           )
+           return
 
         context.user_data["admin_state"] = "channel_caption"
         context.user_data["channel_style"] = key
