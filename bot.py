@@ -1,4 +1,4 @@
-import os
+наimport os
 import io
 import base64
 
@@ -381,7 +381,7 @@ async def handle_photo(
 session = get_session(style)
 prompt = session["prompt"] if session and session.get("prompt") else PROMPTS[style]
 
-        
+        result = await client.images.edit(
             model="gpt-image-2",
             image=image_file,
             prompt=prompt,
