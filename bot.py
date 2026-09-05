@@ -527,7 +527,53 @@ async def callback_handler(
 
     if not is_admin(update):
         return
+    if data == "admin:channel":
+        if not SESSIONS:
+            await query.message.reply_text("Пока нет фотосессий.")
+            return
 
+        buttons = []
+
+        for key, session in SESSIONS.items():
+            buttons.append(
+                [
+                    InlineKeyboardButton(
+                        session["title"],
+                        callback_data=f"channel_style:{key}",
+                    )
+                ]
+            )
+
+        buttons.append(
+            [
+                InlineKeyboardButton(
+                    "🔙 Назад",
+                    callback_data="admin:home",
+                )
+            ]
+        )
+
+        await query.message.reply_text(
+            "📢 Выбери фотосессию для поста:",
+            reply_markup=InlineKeyboardMarkup(buttons),
+        )
+        return
+
+        if data.startswith("channel_style:"):
+           key = data.split(":", 1)[1]
+
+        if key not in SESSIONS:
+           wait query.message.reply_text("❌ Фотосессия не найдена.")
+            return
+
+        context.user_data["admin_state"] = "channel_caption"
+        context.user_data["channel_style"] = key
+        await query.message.reply_text(
+            f"📢 Пост для:\n{SESSIONS[key]['title']}\n\n"
+            "Теперь отправь текст поста."
+        )
+        
+        return 
     # Главное меню админа
     if data == "admin:home":
         context.user_data.clear()
