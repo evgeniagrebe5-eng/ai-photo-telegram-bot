@@ -321,7 +321,18 @@ async def photo_handler(update, context):
             return
         button = InlineKeyboardMarkup([[InlineKeyboardButton("📸 СДЕЛАТЬ ФОТО", url=f"https://t.me/{BOT_USERNAME}?start={key}")]])
         try:
-            await context.bot.send_photo(chat_id=CHANNEL_USERNAME, photo=update.message.photo[-1].file_id, caption=caption, reply_markup=button)
+            reference_file_id = update.message.photo[-1].file_id
+
+            SESSIONS[key]["reference_image_file_id"] = reference_file_id
+            save_sessions(SESSIONS)
+
+            await context.bot.send_photo(
+                chat_id=CHANNEL_USERNAME,
+                photo=reference_file_id,
+                caption=caption,
+                reply_markup=button
+            )
+
             context.user_data.clear()
             await update.message.reply_text("✅ Пост опубликован в канал.", reply_markup=admin_keyboard())
         except Exception:
