@@ -357,8 +357,57 @@ async def photo_handler(update, context):
         image_file = io.BytesIO(bytes(photo_bytes))
         image_file.name = "photo.jpg"
 
-        def generate_image():
-            return client.images.edit(model="gpt-image-2", image=image_file, prompt=session["prompt"], size="1024x1536")
+                reference_file_id = session.get("reference_image_file_id")
+        reference_file = None
+
+        if reference_file_id:
+            reference_telegram_file = await context.bot.get_file(reference_file_id)
+            reference_bytes = await reference_telegram_file.download_as_bytearray()
+            reference_file = io.BytesIO(bytes(reference_bytes))
+            reference_file.name = "reference.jpg"
+
+        if reference_file:
+            prompt = f"""
+Первое изображение — главный визуальный референс фотосессии.
+Второе изображение — человек клиента.
+
+Перенеси человека со второго изображения в сцену первого изображения.
+
+Максимально точно сохрани из первого изображения:
+фон, сцену, предметы, композицию, расположение объектов,
+ракурс камеры, позу, освещение, атмосферу, цветовую палитру,
+одежду и общий визуальный стиль.
+
+Лицо, внешность, возраст и индивидуальные особенности человека
+бери только со второго изображения.
+
+Не заменяй человека на человека из первого изображения.
+Не меняй лицо клиента.
+
+{session.get("prompt", "")}
+
+Итог — реалистичная профессиональная фотография.
+Без пластиковой кожи, beauty-фильтров, CGI, мультяшности
+и искусственного изменения лица.
+"""
+
+            def generate_image():
+                return client.images.edit(
+                    model="gpt-image-2",
+                    image=[reference_file, image_file],
+                    prompt=prompt,
+                    size="1024x1536"
+                )
+
+        else:
+            def generate_image():
+                return client.images.edit(
+                    model="gpt-image-2",
+                    image=image_file,
+                    prompt=session.get("prompt", ""),
+                    size="1024x1536"
+ )
+            
 
         result = await asyncio.to_thread(generate_image)
         if not result.data or not getattr(result.data[0], "b64_json", None):
