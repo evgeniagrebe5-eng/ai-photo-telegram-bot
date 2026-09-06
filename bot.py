@@ -395,4 +395,24 @@ async def lifespan(app: FastAPI):
     await telegram_app.stop()
     await telegram_app.shutdown()
 
-app = FastAPI  
+app = FastAPI()
+
+
+@app.get("/")
+async def root():
+    return {"status": "ok", "bot": "AI Photo Gallery"}
+
+
+@app.post("/telegram")
+async def telegram_webhook(request: Request):
+    data = await request.json()
+    update = Update.de_json(data, telegram_app.bot)
+    await telegram_app.process_update(update)
+    return {"ok": True}
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    port = int(os.environ.get("PORT", 10000))
+    uvicorn.run(app, host="0.0.0.0", port=port)  
