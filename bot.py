@@ -500,7 +500,7 @@ async def callback_handler(
     # -----------------------------------------------------
 
     if data.startswith("style:"):
-        key = data.split(":", 1)[1]
+       key = data.split(":", 1)[1]
 
         if key not in SESSIONS:
             await query.message.reply_text(
