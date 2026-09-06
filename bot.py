@@ -361,10 +361,10 @@ async def photo_handler(update, context):
         reference_file = None
 
         if reference_file_id:
-            reference_telegram_file = await context.bot.get_file(reference_file_id)
-            reference_bytes = await reference_telegram_file.download_as_bytearray()
-            reference_file = io.BytesIO(bytes(reference_bytes))
-            reference_file.name = "reference.jpg"
+           reference_telegram_file = await context.bot.get_file(reference_file_id)
+           reference_bytes = await reference_telegram_file.download_as_bytearray()
+           reference_file = io.BytesIO(bytes(reference_bytes))
+           reference_file.name = "reference.jpg"
 
         if reference_file:
             prompt = f"""
