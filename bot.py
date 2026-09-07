@@ -204,7 +204,56 @@ async def callback_handler(update, context):
         )
         return
 
-    if not is_admin(update):
+     if data.startswith("buy:"):
+        package = data.split(":", 1)[1]
+
+        packages = {
+            "1": ("1 фото", 500),
+            "3": ("3 фото", 1200),
+            "5": ("5 фото", 1800),
+            "10": ("10 фото", 3000),
+        }
+
+        if package not in packages:
+            return
+
+        title, price = packages[package]
+
+        await query.message.reply_text(
+            f"💳 Пакет: {title}\n"
+            f"Стоимость: {price} ₸\n\n"
+            f"Переведи {price} ₸ на Kaspi.\n"
+            f"Номер Kaspi: ТВОЙ_НОМЕР\n\n"
+            "После оплаты нажми кнопку ниже 👇",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton(
+                    "✅ Я оплатил(а)",
+                    callback_data=f"paid:{package}"
+                )]
+            ])
+        )
+        return
+
+    if data.startswith("paid:"):
+        package = data.split(":", 1)[1]
+
+        await context.bot.send_message(
+            chat_id=ADMIN_ID,
+            text=(
+                "💳 НОВАЯ ОПЛАТА\n\n"
+                f"Пакет: {package} фото\n"
+                f"Пользователь: {query.from_user.full_name}\n"
+                f"Telegram ID: {query.from_user.id}\n\n"
+                "Проверь оплату в Kaspi."
+            )
+        )
+
+        await query.message.reply_text(
+            "⏳ Спасибо! Оплата отправлена на проверку.\n\n"
+            "После подтверждения можно будет сделать фотографии 📸"
+        )
+        return
+        if not is_admin(update):
         return
 
     if data == "admin:channel":
