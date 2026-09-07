@@ -101,7 +101,25 @@ DEFAULT_SESSIONS = {
 }
 
 PROMPTS_FILE = "prompts.json"
+FREE_USERS_FILE = "free_users.json"
 
+def load_free_users():
+    if not os.path.exists(FREE_USERS_FILE):
+        return set()
+
+    try:
+        with open(FREE_USERS_FILE, "r", encoding="utf-8") as f:
+            return set(json.load(f))
+    except Exception:
+        return set()
+
+
+def save_free_users(users):
+    with open(FREE_USERS_FILE, "w", encoding="utf-8") as f:
+        json.dump(list(users), f, ensure_ascii=False, indent=2)
+
+
+FREE_USERS = load_free_users() в 
 def save_sessions(data):
     with open(PROMPTS_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
