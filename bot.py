@@ -119,7 +119,7 @@ def save_free_users(users):
         json.dump(list(users), f, ensure_ascii=False, indent=2)
 
 
-FREE_USERS = load_free_users() в 
+FREE_USERS = load_free_users()  
 def save_sessions(data):
     with open(PROMPTS_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
