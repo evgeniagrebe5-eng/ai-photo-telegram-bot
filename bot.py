@@ -427,7 +427,7 @@ async def photo_handler(update, context):
  )
             
         if not is_admin(update) and context.user_data.get("free_used"):
-     await update.message.reply_text(
+        await update.message.reply_text(
         "🎁 Бесплатная генерация уже использована.\n\n"
         "Для следующего фото нужна оплата ❤️"
     )
