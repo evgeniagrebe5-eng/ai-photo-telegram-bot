@@ -222,7 +222,7 @@ async def callback_handler(update, context):
         if package not in packages:
             return
 
-               title, price = packages[package]
+       title, price = packages[package]
         await query.message.reply_text(
             f"💳 Пакет: {title}\n"
             f"Стоимость: {price} ₸\n\n"
