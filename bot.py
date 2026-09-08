@@ -198,7 +198,7 @@ async def callback_handler(update, context):
     await query.answer()
     data = query.data
 
-if data.startswith("style:"):
+ if data.startswith("style:"):
         key = data.split(":", 1)[1]
         if key not in SESSIONS:
             await query.message.reply_text("❌ Эта фотосессия больше недоступна.")
@@ -210,7 +210,7 @@ if data.startswith("style:"):
         )
         return
 
-        if data.startswith("buy:"):
+ if data.startswith("buy:"):
            package = data.split(":", 1)[1]
 
            packages = {
@@ -240,7 +240,7 @@ if data.startswith("style:"):
         )
         return    
 
-if data.startswith("paid:"):
+  if data.startswith("paid:"):
         package = data.split(":", 1)[1]
 
         await context.bot.send_message(
@@ -262,7 +262,7 @@ if data.startswith("paid:"):
     if not is_admin(update):
         return
 
-    if data == "admin:channel":
+  if data == "admin:channel":
         if not SESSIONS:
             await query.message.reply_text("Пока нет фотосессий.")
             return
@@ -271,7 +271,7 @@ if data.startswith("paid:"):
         await query.message.reply_text("📢 Выбери фотосессию для поста:", reply_markup=InlineKeyboardMarkup(buttons))
         return
 
-    if data.startswith("channel_style:"):
+   if data.startswith("channel_style:"):
         key = data.split(":", 1)[1]
         if key not in SESSIONS:
             await query.message.reply_text("❌ Фотосессия не найдена.")
