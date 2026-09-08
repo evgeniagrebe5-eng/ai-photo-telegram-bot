@@ -147,7 +147,13 @@ def client_keyboard():
         [InlineKeyboardButton(s["title"], callback_data=f"style:{k}")]
         for k, s in SESSIONS.items()
     ])
-
+def payment_keyboard():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("📸 1 фото — 500 ₸", callback_data="buy:1")],
+        [InlineKeyboardButton("📸 3 фото — 1 200 ₸", callback_data="buy:3")],
+        [InlineKeyboardButton("📸 5 фото — 1 800 ₸", callback_data="buy:5")],
+        [InlineKeyboardButton("📸 10 фото — 3 000 ₸", callback_data="buy:10")],
+    ])
 def admin_keyboard():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("➕ Добавить фотосессию", callback_data="admin:add")],
