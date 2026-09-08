@@ -204,7 +204,7 @@ async def callback_handler(update, context):
         )
         return
 
-     if data.startswith("buy:"):
+        if data.startswith("buy:"):
         package = data.split(":", 1)[1]
 
         packages = {
