@@ -220,7 +220,7 @@ async def callback_handler(update, context):
             "10": ("10 фото", 3000),
         }
 
-        if package not in packages:
+    if package not in packages:
             return
 
         title, price = packages[package]
