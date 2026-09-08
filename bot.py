@@ -223,7 +223,7 @@ async def callback_handler(update, context):
             return
 
        title, price = packages[package]
-        await query.message.reply_text(
+       await query.message.reply_text(
             f"💳 Пакет: {title}\n"
             f"Стоимость: {price} ₸\n\n"
             f"Переведи {price} ₸ на Kaspi.\n"
