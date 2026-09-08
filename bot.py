@@ -258,8 +258,8 @@ async def callback_handler(update, context):
             "⏳ Спасибо! Оплата отправлена на проверку.\n\n"
             "После подтверждения можно будет сделать фотографии 📸"
         )
-        return
-    if not is_admin(update):
+        return    
+  if not is_admin(update):
         return
 
   if data == "admin:channel":
