@@ -222,7 +222,7 @@ if data.startswith("buy:"):
         if package not in packages:
             return
 
-       title, price = packages[package]
+        title, price = packages[package]
        await query.message.reply_text(
             f"💳 Пакет: {title}\n"
             f"Стоимость: {price} ₸\n\n"
