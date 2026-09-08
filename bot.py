@@ -236,7 +236,7 @@ if data.startswith("buy:"):
                 )]
             ])
         )
-        return        
+         return        
 
      if data.startswith("paid:"):
         package = data.split(":", 1)[1]
