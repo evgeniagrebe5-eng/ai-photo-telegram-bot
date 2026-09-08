@@ -234,7 +234,7 @@ if data.startswith("style:"):
         )
         return    
 
-    if data.startswith("paid:"):
+if data.startswith("paid:"):
         package = data.split(":", 1)[1]
 
         await context.bot.send_message(
