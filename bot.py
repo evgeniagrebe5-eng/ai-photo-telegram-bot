@@ -192,7 +192,7 @@ async def callback_handler(update, context):
     await query.answer()
     data = query.data
 
-    if data.startswith("style:"):
+if data.startswith("style:"):
         key = data.split(":", 1)[1]
         if key not in SESSIONS:
             await query.message.reply_text("❌ Эта фотосессия больше недоступна.")
@@ -214,7 +214,7 @@ async def callback_handler(update, context):
             "10": ("10 фото", 3000),
         }
 
-            if package not in packages:
+        if package not in packages:
             return
 
         title, price = packages[package]
@@ -232,7 +232,7 @@ async def callback_handler(update, context):
                 )]
             ])
         )
-        return
+        return    
 
     if data.startswith("paid:"):
         package = data.split(":", 1)[1]
