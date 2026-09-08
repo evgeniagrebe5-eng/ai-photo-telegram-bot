@@ -220,11 +220,10 @@ async def callback_handler(update, context):
             "10": ("10 фото", 3000),
         }
 
-    if package not in packages:
+        if package not in packages:
             return
 
-        title, price = packages[package]
-
+               title, price = packages[package]
         await query.message.reply_text(
             f"💳 Пакет: {title}\n"
             f"Стоимость: {price} ₸\n\n"
@@ -238,7 +237,7 @@ async def callback_handler(update, context):
                 )]
             ])
         )
-        return    
+         return    
 
      if data.startswith("paid:"):
         package = data.split(":", 1)[1]
