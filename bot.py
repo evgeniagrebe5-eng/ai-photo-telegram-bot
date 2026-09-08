@@ -205,16 +205,16 @@ async def callback_handler(update, context):
         return
 
         if data.startswith("buy:"):
-        package = data.split(":", 1)[1]
+           package = data.split(":", 1)[1]
 
-        packages = {
+           packages = {
             "1": ("1 фото", 500),
             "3": ("3 фото", 1200),
             "5": ("5 фото", 1800),
             "10": ("10 фото", 3000),
         }
 
-        if package not in packages:
+            if package not in packages:
             return
 
         title, price = packages[package]
