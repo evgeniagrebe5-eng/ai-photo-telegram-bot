@@ -259,7 +259,7 @@ if data.startswith("paid:"):
             "После подтверждения можно будет сделать фотографии 📸"
         )
         return
-        if not is_admin(update):
+    if not is_admin(update):
         return
 
     if data == "admin:channel":
