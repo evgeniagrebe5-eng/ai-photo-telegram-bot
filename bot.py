@@ -237,7 +237,34 @@ async def callback_handler(update, context):
         )
         return
 
-      
+    if data.startswith("details:"):
+        package = data.split(":", 1)[1]
+
+        packages = {
+            "1": ("1 фото", 500),
+            "3": ("3 фото", 1200),
+            "5": ("5 фото", 1800),
+            "10": ("10 фото", 3000),
+        }
+
+        if package not in packages:
+            return
+
+        title, price = packages[package]
+
+        await query.message.reply_text(
+            f"💳 Оплата пакета: {title}\n"
+            f"Сумма: {price} ₸\n\n"
+            "Переведи указанную сумму на Kaspi.\n"
+            "После оплаты нажми кнопку ниже 👇",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton(
+                    "✅ Я оплатил(а)",
+                    callback_data=f"paid:{package}"
+                )]
+            ])
+        )
+        return      
 
     if data.startswith("paid:"):
         package = data.split(":", 1)[1]
