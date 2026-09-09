@@ -209,8 +209,9 @@ async def callback_handler(update, context):
         )
         return
 
-    if data.startswith("buy:"):
+       if data.startswith("buy:"):
         package = data.split(":", 1)[1]
+
         packages = {
             "1": ("1 фото", 500),
             "3": ("3 фото", 1200),
@@ -220,6 +221,21 @@ async def callback_handler(update, context):
 
         if package not in packages:
             return
+
+        title, price = packages[package]
+
+        await query.message.reply_text(
+            f"💳 Пакет: {title}\n"
+            f"Стоимость: {price} ₸\n\n"
+            "Нажми кнопку ниже, чтобы получить реквизиты для оплаты 👇",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton(
+                    "💳 ПОКАЗАТЬ РЕКВИЗИТЫ",
+                    callback_data=f"details:{package}"
+                )]
+            ])
+        )
+        return
 
         title, price = packages[package]
         await query.message.reply_text(
