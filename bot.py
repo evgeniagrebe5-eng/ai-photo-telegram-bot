@@ -255,9 +255,9 @@ async def callback_handler(update, context):
         await query.message.reply_text(
             f"💳 Оплата пакета: {title}\n"
             f"Сумма: {price} ₸\n\n"
-            "Переведи указанную сумму на Kaspi.\n"
-            "Номер для перевода: +7 777 878 00 78\n\n"
-            "После оплаты нажми кнопку ниже 👇",
+           "Переведи указанную сумму на Kaspi.\n"
+           "Номер для перевода: +7 777 878 00 78\n\n"
+           "После оплаты нажми кнопку ниже 👇",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton(
                     "✅ Я оплатил(а)",
