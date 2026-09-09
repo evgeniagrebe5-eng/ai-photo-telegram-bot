@@ -256,10 +256,10 @@ async def callback_handler(update, context):
             "После подтверждения можно будет сделать фотографии 📸"
         )
         return    
-   if not is_admin(update):
+    if not is_admin(update):
         return
 
-   if data == "admin:channel":
+    if data == "admin:channel":
         if not SESSIONS:
             await query.message.reply_text("Пока нет фотосессий.")
             return
@@ -268,7 +268,7 @@ async def callback_handler(update, context):
         await query.message.reply_text("📢 Выбери фотосессию для поста:", reply_markup=InlineKeyboardMarkup(buttons))
         return
 
-    if data.startswith("channel_style:"):
+     if data.startswith("channel_style:"):
         key = data.split(":", 1)[1]
         if key not in SESSIONS:
             await query.message.reply_text("❌ Фотосессия не найдена.")
