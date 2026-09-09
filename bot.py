@@ -531,11 +531,12 @@ async def photo_handler(update, context):
  )
             
         if not is_admin(update) and context.user_data.get("free_used"):
-            await update.message.reply_text(
-                "🎁 Бесплатная генерация уже использована.\n"
-                "Для следующего фото нужна оплата 💳"
-            )
-            return               
+    await update.message.reply_text(
+        "🎁 Бесплатная генерация уже использована.\n\n"
+        "Выбери пакет фотографий 👇",
+        reply_markup=payment_keyboard()
+    )
+    return            
     
         result = await asyncio.to_thread(generate_image)
         if not result.data or not getattr(result.data[0], "b64_json", None):
