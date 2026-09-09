@@ -529,14 +529,14 @@ async def photo_handler(update, context):
                     prompt=session.get("prompt", ""),
                     size="1024x1536"
  )
-            
+
         if not is_admin(update) and context.user_data.get("free_used"):
-    await update.message.reply_text(
-        "🎁 Бесплатная генерация уже использована.\n\n"
-        "Выбери пакет фотографий 👇",
-        reply_markup=payment_keyboard()
-    )
-    return            
+            await update.message.reply_text(
+                "🎁 Бесплатная генерация уже использована.\n\n"
+                "Выбери пакет фотографий 👇",
+                reply_markup=payment_keyboard()
+            )
+            return
     
         result = await asyncio.to_thread(generate_image)
         if not result.data or not getattr(result.data[0], "b64_json", None):
@@ -550,7 +550,7 @@ async def photo_handler(update, context):
             reply_markup=client_keyboard(),
         )
         if not is_admin(update):
-           context.user_data["free_used"] = True
+            context.user_data["free_used"] = True
     except Exception:
         logger.exception("Image generation error")
         await update.message.reply_text("😔 Не удалось создать фотографию.\n\nПопробуй отправить фото ещё раз.")
