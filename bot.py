@@ -309,7 +309,48 @@ async def callback_handler(update, context):
             "После подтверждения можно будет сделать фотографии 📸"
         )
         return
+    if data.startswith("confirm:"):
+        parts = data.split(":", 2)
+        package = parts[1]
+        user_id = parts[2]
 
+        package_count = {
+            "1": 1,
+            "3": 3,
+            "5": 5,
+            "10": 10,
+        }
+
+        if package not in package_count:
+            return
+
+        users = load_users()
+
+        if user_id not in users:
+            users[user_id] = {}
+
+        users[user_id]["paid_photos"] = (
+            users[user_id].get("paid_photos", 0)
+            + package_count[package]
+        )
+
+        save_users(users)
+
+        await context.bot.send_message(
+            chat_id=int(user_id),
+            text=(
+                "🎉 Оплата подтверждена!\n\n"
+                f"Тебе доступно: {package_count[package]} фото 📸\n\n"
+                "Выбирай фотосессию и отправляй своё фото 👇"
+            ),
+            reply_markup=client_keyboard()
+        )
+
+        await query.message.reply_text(
+            "✅ Оплата подтверждена.\n\n"
+            f"Клиенту выдано: {package_count[package]} фото."
+        )
+        return
     if not is_admin(update):
         return
 
