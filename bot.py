@@ -277,8 +277,14 @@ async def callback_handler(update, context):
                 f"Пакет: {package} фото\n"
                 f"Пользователь: {query.from_user.full_name}\n"
                 f"Telegram ID: {query.from_user.id}\n\n"
-                "Проверь оплату в Kaspi."
-            )
+                "Проверь оплату в Kaspi и нажми кнопку ниже."
+            ),
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton(
+                    "✅ ПОДТВЕРДИТЬ ОПЛАТУ",
+                    callback_data=f"confirm:{package}:{query.from_user.id}"
+                )]
+            ])
         )
 
         await query.message.reply_text(
