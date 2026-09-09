@@ -237,21 +237,7 @@ async def callback_handler(update, context):
         )
         return
 
-        title, price = packages[package]
-        await query.message.reply_text(
-            f"💳 Пакет: {title}\n"
-            f"Стоимость: {price} ₸\n\n"
-            f"Переведи {price} ₸ на Kaspi.\n"
-            f"Номер Kaspi: +7 777 878 00 78\n\n"
-            "После оплаты нажми кнопку ниже 👇",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton(
-                    "✅ Я оплатил(а)",
-                    callback_data=f"paid:{package}"
-                )]
-            ])
-        )
-        return        
+      
 
     if data.startswith("paid:"):
         package = data.split(":", 1)[1]
