@@ -140,6 +140,23 @@ def load_sessions():
         return DEFAULT_SESSIONS.copy()
 
 SESSIONS = load_sessions()
+USERS_FILE = "users.json"
+
+def load_users():
+    if not os.path.exists(USERS_FILE):
+        return {}
+    try:
+        with open(USERS_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        logger.error("Error loading users.json: %s", e)
+        return {}
+
+def save_users(users):
+    with open(USERS_FILE, "w", encoding="utf-8") as f:
+        json.dump(users, f, ensure_ascii=False, indent=2)
+
+USERS = load_users()
 telegram_app = Application.builder().token(BOT_TOKEN).build()
 
 def client_keyboard():
