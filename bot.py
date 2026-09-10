@@ -414,17 +414,55 @@ async def callback_handler(update, context):
         await query.message.reply_text("📢 Выбери фотосессию для поста:", reply_markup=InlineKeyboardMarkup(buttons))
         return
 
-    if data.startswith("channel_style:"):
-        key = data.split(":", 1)[1]
-        if key not in SESSIONS:
-            await query.message.reply_text("❌ Фотосессия не найдена.")
-            return
-        context.user_data["admin_state"] = "channel_caption"
-        context.user_data["channel_style"] = key
+    if data.startswith("style:"):
+    key = data.split(":", 1)[1]
+
+    if key not in SESSIONS:
         await query.message.reply_text(
-            f"📢 Пост для:\n{SESSIONS[key]['title']}\n\nТеперь отправь текст поста."
+            "❌ Эта фотосессия больше недоступна."
         )
         return
+
+    context.user_data["selected_style"] = key
+
+    gallery_items = SESSIONS[key].get("gallery_items", [])
+
+    if gallery_items:
+        await query.message.reply_text(
+            f"{SESSIONS[key]['title']}\n\n"
+            "✨ Выбери понравившийся образ 👇"
+        )
+
+        for index, item in enumerate(gallery_items):
+            caption = item.get("caption", "").strip()
+
+            text = f"{SESSIONS[key]['title']}"
+            if caption:
+                text += f"\n\n{caption}"
+
+            await query.message.reply_photo(
+                photo=item["reference_image_file_id"],
+                caption=text,
+                reply_markup=InlineKeyboardMarkup([
+                    [
+                        InlineKeyboardButton(
+                            "📸 СДЕЛАТЬ ТАКОЕ ФОТО",
+                            callback_data=f"gallery:{key}:{index}"
+                        )
+                    ]
+                ])
+            )
+
+        return
+
+    # Если примеров ещё нет — оставляем старое поведение
+    await query.message.reply_text(
+        f"{SESSIONS[key]['title']}\n\n"
+        "Отлично ❤️\n"
+        "Теперь просто отправь свою фотографию 📸\n\n"
+        "Промт писать не нужно."
+    )
+    return
 
     if data == "admin:home":
         context.user_data.clear()
