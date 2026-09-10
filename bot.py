@@ -531,8 +531,8 @@ async def photo_handler(update, context):
     
 
         if is_admin(update) and context.user_data.get("admin_state") == "channel_photo":
-        key = context.user_data.get("channel_style")
-        caption = context.user_data.get("channel_caption", "")
+           key = context.user_data.get("channel_style")
+           caption = context.user_data.get("channel_caption", "")
 
         if not key or key not in SESSIONS:
             context.user_data.clear()
