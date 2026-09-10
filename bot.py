@@ -530,7 +530,7 @@ async def photo_handler(update, context):
 
     
 
-      if is_admin(update) and context.user_data.get("admin_state") == "channel_photo":
+        if is_admin(update) and context.user_data.get("admin_state") == "channel_photo":
         key = context.user_data.get("channel_style")
         caption = context.user_data.get("channel_caption", "")
 
