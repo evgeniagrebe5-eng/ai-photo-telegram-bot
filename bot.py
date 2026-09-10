@@ -225,10 +225,10 @@ async def callback_handler(update, context):
             "Теперь просто отправь свою фотографию 📸\n\nПромт писать не нужно."
         )
         return
-       if data.startswith("gallery:"):
-           parts = data.split(":", 2)
+    if data.startswith("gallery:"):
+        parts = data.split(":", 2)
 
-           if len(parts) != 3:
+        if len(parts) != 3:
             return
 
            key = parts[1]
