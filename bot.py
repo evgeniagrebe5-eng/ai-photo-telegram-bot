@@ -541,17 +541,17 @@ async def photo_handler(update, context):
         try:
             reference_file_id = update.message.photo[-1].file_id
 
-        # Сохраняем последний референс как раньше
-        SESSIONS[key]["reference_image_file_id"] = reference_file_id
+            # Сохраняем последний референс как раньше
+            SESSIONS[key]["reference_image_file_id"] = reference_file_id
 
-        # Дополнительно сохраняем работу в галерею
-if "gallery_items" not in SESSIONS[key]:
-    SESSIONS[key]["gallery_items"] = []
+            # Дополнительно сохраняем работу в галерею
+            if "gallery_items" not in SESSIONS[key]:
+            SESSIONS[key]["gallery_items"] = []
 
-SESSIONS[key]["gallery_items"].append({
-    "reference_image_file_id": reference_file_id,
-    "prompt": SESSIONS[key].get("prompt", ""),
-    "caption": caption
+            SESSIONS[key]["gallery_items"].append({
+           "reference_image_file_id": reference_file_id,
+           "prompt": SESSIONS[key].get("prompt", ""),
+           "caption": caption
 })
 
 save_sessions(SESSIONS)
