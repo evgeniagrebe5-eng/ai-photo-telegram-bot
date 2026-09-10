@@ -225,24 +225,24 @@ async def callback_handler(update, context):
             "Теперь просто отправь свою фотографию 📸\n\nПромт писать не нужно."
         )
         return
-if data.startswith("gallery:"):
-    parts = data.split(":", 2)
+     if data.startswith("gallery:"):
+        parts = data.split(":", 2)
 
-    if len(parts) != 3:
-        return
+        if len(parts) != 3:
+            return
 
-    key = parts[1]
+        key = parts[1]
 
-    try:
-        index = int(parts[2])
-    except ValueError:
-        return
+        try:
+            index = int(parts[2])
+        except ValueError:
+            return
 
-    if key not in SESSIONS:
-        await query.message.reply_text(
-            "❌ Эта фотосессия больше недоступна."
-        )
-        return
+        if key not in SESSIONS:
+            await query.message.reply_text(
+                "❌ Эта фотосессия больше недоступна."
+            )
+            return
 
     gallery_items = SESSIONS[key].get("gallery_items", [])
 
