@@ -225,7 +225,7 @@ async def callback_handler(update, context):
             "Теперь просто отправь свою фотографию 📸\n\nПромт писать не нужно."
         )
         return
-     if data.startswith("gallery:"):
+      if data.startswith("gallery:"):
         parts = data.split(":", 2)
 
         if len(parts) != 3:
@@ -244,21 +244,23 @@ async def callback_handler(update, context):
             )
             return
 
-    gallery_items = SESSIONS[key].get("gallery_items", [])
+        gallery_items = SESSIONS[key].get("gallery_items", [])
 
-    if index < 0 or index >= len(gallery_items):
+        if index < 0 or index >= len(gallery_items):
+            await query.message.reply_text(
+                "❌ Этот образ больше недоступен."
+            )
+            return
+
+        context.user_data["selected_style"] = key
+        context.user_data["selected_gallery_index"] = index
+
         await query.message.reply_text(
-            "❌ Этот образ больше недоступен."
+            f"📸 Отличный выбор!\n\n"
+            f"{SESSIONS[key]['title']}\n\n"
+            "Теперь отправь свою фотографию 📸"
         )
         return
-
-    context.user_data["selected_style"] = key
-    context.user_data["selected_gallery_index"] = index
-
-    await query.message.reply_text(
-        f"📸 Отличный выбор!\n\n"
-        f"{SESSIONS[key]['title']}\n\n"
-        "Теперь отправь свою фотографию 👇\n"
         "Промт писать не нужно — я всё сделаю сама ❤️"
     )
     return
