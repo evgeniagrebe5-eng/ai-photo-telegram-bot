@@ -541,10 +541,22 @@ async def photo_handler(update, context):
         try:
             reference_file_id = update.message.photo[-1].file_id
 
-            SESSIONS[key]["reference_image_file_id"] = reference_file_id
-            save_sessions(SESSIONS)
+# Сохраняем последний референс как раньше
+SESSIONS[key]["reference_image_file_id"] = reference_file_id
 
-            await context.bot.send_photo(
+# Дополнительно сохраняем работу в галерею
+if "gallery_items" not in SESSIONS[key]:
+    SESSIONS[key]["gallery_items"] = []
+
+SESSIONS[key]["gallery_items"].append({
+    "reference_image_file_id": reference_file_id,
+    "prompt": SESSIONS[key].get("prompt", ""),
+    "caption": caption
+})
+
+save_sessions(SESSIONS)
+
+await context.bot.send_photo(
                 chat_id=CHANNEL_USERNAME,
                 photo=reference_file_id,
                 caption=caption,
