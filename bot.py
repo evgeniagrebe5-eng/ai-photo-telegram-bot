@@ -239,7 +239,7 @@ if data.startswith("gallery:"):
         return
 
     if key not in SESSIONS:
-         await query.message.reply_text(
+        await query.message.reply_text(
             "❌ Эта фотосессия больше недоступна."
         )
         return
