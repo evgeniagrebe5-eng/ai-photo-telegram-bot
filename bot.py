@@ -530,33 +530,42 @@ async def photo_handler(update, context):
 
     
 
-    if is_admin(update) and context.user_data.get("admin_state") == "channel_photo":
+     if is_admin(update) and context.user_data.get("admin_state") == "channel_photo":
         key = context.user_data.get("channel_style")
         caption = context.user_data.get("channel_caption", "")
+
         if not key or key not in SESSIONS:
             context.user_data.clear()
-            await update.message.reply_text("❌ Не удалось найти фотосессию.", reply_markup=admin_keyboard())
+            await update.message.reply_text(
+                "❌ Не удалось найти фотосессию.",
+                reply_markup=admin_keyboard()
+            )
             return
-        button = InlineKeyboardMarkup([[InlineKeyboardButton("📸 СДЕЛАТЬ ФОТО", url=f"https://t.me/{BOT_USERNAME}?start={key}")]])
+
+        button = InlineKeyboardMarkup([
+            [InlineKeyboardButton(
+                "📸 СДЕЛАТЬ ФОТО",
+                url=f"https://t.me/{BOT_USERNAME}?start={key}"
+            )]
+        ])
+
         try:
             reference_file_id = update.message.photo[-1].file_id
 
-                 # Сохраняем последний референс как раньше
             SESSIONS[key]["reference_image_file_id"] = reference_file_id
 
-            # Дополнительно сохраняем работу в галерею
             if "gallery_items" not in SESSIONS[key]:
-            SESSIONS[key]["gallery_items"] = []
+                SESSIONS[key]["gallery_items"] = []
 
             SESSIONS[key]["gallery_items"].append({
-           "reference_image_file_id": reference_file_id,
-           "prompt": SESSIONS[key].get("prompt", ""),
-           "caption": caption
-})
+                "reference_image_file_id": reference_file_id,
+                "prompt": SESSIONS[key].get("prompt", ""),
+                "caption": caption
+            })
 
-save_sessions(SESSIONS)
+            save_sessions(SESSIONS)
 
-await context.bot.send_photo(
+            await context.bot.send_photo(
                 chat_id=CHANNEL_USERNAME,
                 photo=reference_file_id,
                 caption=caption,
@@ -564,18 +573,20 @@ await context.bot.send_photo(
             )
 
             context.user_data.clear()
-            await update.message.reply_text("✅ Пост опубликован в канал.", reply_markup=admin_keyboard())
+
+            await update.message.reply_text(
+                "✅ Пост опубликован в канал.",
+                reply_markup=admin_keyboard()
+            )
+
         except Exception:
             logger.exception("Channel post error")
-            await update.message.reply_text("❌ Не удалось опубликовать пост.\n\nПроверь, что бот добавлен в канал и имеет права администратора.")
-        return
 
-    style = context.user_data.get("selected_style")
-    if not style:
-        await update.message.reply_text("Сначала выбери фотосессию 👇", reply_markup=client_keyboard())
-        return
-    if style not in SESSIONS:
-        await update.message.reply_text("❌ Эта фотосессия больше недоступна.", reply_markup=client_keyboard())
+            await update.message.reply_text(
+                "❌ Не удалось опубликовать пост.\n\n"
+                "Проверь, что бот добавлен в канал и имеет права администратора."
+            )
+
         return
 
     session = SESSIONS[style]
