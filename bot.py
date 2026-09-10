@@ -225,17 +225,17 @@ async def callback_handler(update, context):
             "Теперь просто отправь свою фотографию 📸\n\nПромт писать не нужно."
         )
         return
-      if data.startswith("gallery:"):
-        parts = data.split(":", 2)
+       if data.startswith("gallery:"):
+           parts = data.split(":", 2)
 
-        if len(parts) != 3:
+           if len(parts) != 3:
             return
 
-        key = parts[1]
+           key = parts[1]
 
-        try:
+           try:
             index = int(parts[2])
-        except ValueError:
+            except ValueError:
             return
 
         if key not in SESSIONS:
