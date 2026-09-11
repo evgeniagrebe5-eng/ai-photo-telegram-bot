@@ -260,11 +260,8 @@ async def callback_handler(update, context):
             f"{SESSIONS[key]['title']}\n\n"
             "Теперь отправь свою фотографию 📸"
         )
+       
         return
-
-        "Промт писать не нужно — я всё сделаю сама ❤️"
-    )
-    return
     if data.startswith("buy:"):
         package = data.split(":", 1)[1]
 
