@@ -182,7 +182,7 @@ def admin_keyboard():
     ])
 
 def is_admin(update):
-    return bool(update.effective_user and update.effective_user.id == ADMIN_ID)
+  return bool(update.effective_user and str(update.effective_user.id) == str(ADMIN_ID))
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
