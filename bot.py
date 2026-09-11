@@ -231,11 +231,11 @@ async def callback_handler(update, context):
         if len(parts) != 3:
             return
 
-           key = parts[1]
+        key = parts[1]
 
-           try:
+        try:
             index = int(parts[2])
-            except ValueError:
+        except ValueError:
             return
 
         if key not in SESSIONS:
@@ -261,6 +261,7 @@ async def callback_handler(update, context):
             "Теперь отправь свою фотографию 📸"
         )
         return
+
         "Промт писать не нужно — я всё сделаю сама ❤️"
     )
     return
