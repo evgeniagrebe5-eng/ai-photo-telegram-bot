@@ -214,7 +214,7 @@ async def callback_handler(update, context):
     query = update.callback_query
     await query.answer()
     data = query.data
-      if data.startswith("style:"):
+    if data.startswith("style:"):
         key = data.split(":", 1)[1]
 
         if key not in SESSIONS:
