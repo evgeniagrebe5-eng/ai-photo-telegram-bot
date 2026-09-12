@@ -667,10 +667,9 @@ async def photo_handler(update, context):
     style = context.user_data.get("selected_style")
 
     if not style or style not in SESSIONS:
-       await update.message.reply_text(
+        await update.message.reply_text(
         "❌ Сначала выбери фотосессию.",
         reply_markup=client_keyboard()
-        )
         return
 
 
