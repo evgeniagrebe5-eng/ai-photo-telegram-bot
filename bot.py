@@ -214,17 +214,54 @@ async def callback_handler(update, context):
     query = update.callback_query
     await query.answer()
     data = query.data
-    if data.startswith("style:"):
+      if data.startswith("style:"):
         key = data.split(":", 1)[1]
+
         if key not in SESSIONS:
-            await query.message.reply_text("❌ Эта фотосессия больше недоступна.")
+            await query.message.reply_text(
+                "❌ Эта фотосессия больше недоступна."
+            )
             return
+
         context.user_data["selected_style"] = key
+
+        gallery_items = SESSIONS[key].get("gallery_items", [])
+
+        if gallery_items:
+            await query.message.reply_text(
+                f"{SESSIONS[key]['title']}\n\n"
+                "✨ Выбери понравившийся образ 👇"
+            )
+
+            for index, item in enumerate(gallery_items):
+                caption = item.get("caption", "").strip()
+
+                text = SESSIONS[key]["title"]
+                if caption:
+                    text += f"\n\n{caption}"
+
+                await query.message.reply_photo(
+                    photo=item["reference_image_file_id"],
+                    caption=text,
+                    reply_markup=InlineKeyboardMarkup([
+                        [
+                            InlineKeyboardButton(
+                                "📸 СДЕЛАТЬ ТАКОЕ ФОТО",
+                                callback_data=f"gallery:{key}:{index}"
+                            )
+                        ]
+                    ])
+                )
+
+            return
+
         await query.message.reply_text(
-            f"{SESSIONS[key]['title']}\n\nОтлично ❤️\n"
-            "Теперь просто отправь свою фотографию 📸\n\nПромт писать не нужно."
+            f"{SESSIONS[key]['title']}\n\n"
+            "Отлично ❤️\n"
+            "Теперь просто отправь свою фотографию 📸\n\n"
+            "Промт писать не нужно."
         )
-        return
+        return 
     if data.startswith("gallery:"):
         parts = data.split(":", 2)
 
