@@ -664,24 +664,30 @@ async def photo_handler(update, context):
 
         return
 
-    style = context.user_data.get("selected_style")
+  style = context.user_data.get("selected_style")
 
     if not style or style not in SESSIONS:
-       await update.message.reply_text(
-         "❌ Сначала выбери фотосессию.",
-          reply_markup=client_keyboard()
+        await update.message.reply_text(
+            "❌ Сначала выбери фотосессию.",
+            reply_markup=client_keyboard()
         )
         return
 
-
     session = SESSIONS[style]
-    await update.message.reply_text("📸 Фото получила!\n\n✨ Начинаю обработку...\nЭто может занять некоторое время.")
+
+    await update.message.reply_text(
+        "📸 Фото получила!\n\n"
+        "✨ Начинаю обработку...\n"
+        "Это может занять некоторое время."
+    )
 
     try:
         telegram_file = await update.message.photo[-1].get_file()
         photo_bytes = await telegram_file.download_as_bytearray()
+
         image_file = io.BytesIO(bytes(photo_bytes))
         image_file.name = "photo.jpg"
+ 
 
         reference_file_id = session.get("reference_image_file_id")
         reference_file = None
