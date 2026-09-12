@@ -672,7 +672,7 @@ async def photo_handler(update, context):
           reply_markup=client_keyboard()
         )
         return
-         )
+
 
     session = SESSIONS[style]
     await update.message.reply_text("📸 Фото получила!\n\n✨ Начинаю обработку...\nЭто может занять некоторое время.")
