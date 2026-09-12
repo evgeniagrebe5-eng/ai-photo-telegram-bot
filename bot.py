@@ -671,7 +671,7 @@ async def photo_handler(update, context):
         "❌ Сначала выбери фотосессию.",
         reply_markup=client_keyboard()
         return
-
+        )
 
 
     session = SESSIONS[style]
