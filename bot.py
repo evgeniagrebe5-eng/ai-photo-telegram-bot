@@ -612,11 +612,13 @@ async def photo_handler(update, context):
     if not update.message:
         return
 
-    
-
-        if is_admin(update) and context.user_data.get("admin_state") == "channel_photo":
-           key = context.user_data.get("channel_style")
-           caption = context.user_data.get("channel_caption", "")
+    # =========================
+    # 📢 АДМИН: ПОСТ В КАНАЛ
+    # =========================
+    if is_admin(update) and context.user_data.get("admin_state") == "channel_photo":
+        key = context.user_data.get("channel_style")
+        caption = context.user_data.get("channel_caption", "")
+        channel_prompt = context.user_data.get("channel_prompt", "").strip()
 
         if not key or key not in SESSIONS:
             context.user_data.clear()
@@ -626,40 +628,94 @@ async def photo_handler(update, context):
             )
             return
 
-        button = InlineKeyboardMarkup([
-            [InlineKeyboardButton(
-                "📸 СДЕЛАТЬ ФОТО",
-                url=f"https://t.me/{BOT_USERNAME}?start={key}"
-            )]
-        ])
+        if not channel_prompt:
+            await update.message.reply_text(
+                "❌ Промт не найден.\n\n"
+                "Начни создание поста заново."
+            )
+            return
 
         try:
-            reference_file_id = update.message.photo[-1].file_id
+            # Получаем фото, которое прислал администратор
+            telegram_file = await update.message.photo[-1].get_file()
+            photo_bytes = await telegram_file.download_as_bytearray()
 
-            SESSIONS[key]["reference_image_file_id"] = reference_file_id
+            image_file = io.BytesIO(bytes(photo_bytes))
+            image_file.name = "channel_reference.jpg"
 
-            if "gallery_items" not in SESSIONS[key]:
-                SESSIONS[key]["gallery_items"] = []
+            # Генерируем изображение ИМЕННО по промту,
+            # который администратор ввёл перед загрузкой фото
+            def generate_channel_image():
+                return client.images.edit(
+                    model="gpt-image-2",
+                    image=image_file,
+                    prompt=channel_prompt,
+                    size="1024x1536"
+                )
 
-            SESSIONS[key]["gallery_items"].append({
-                "reference_image_file_id": reference_file_id,
-                "prompt": SESSIONS[key].get("prompt", ""),
-                "caption": caption
-            })
+            await update.message.reply_text(
+                "✨ Создаю изображение по твоему промту...\n"
+                "Немного подожди 📸"
+            )
 
-            save_sessions(SESSIONS)
+            result = await asyncio.to_thread(generate_channel_image)
 
-            await context.bot.send_photo(
+            if not result.data or not getattr(result.data[0], "b64_json", None):
+                raise RuntimeError("OpenAI returned no image")
+
+            generated_bytes = base64.b64decode(
+                result.data[0].b64_json
+            )
+
+            output = io.BytesIO(generated_bytes)
+            output.name = "channel_photo.png"
+
+            # Кнопка для клиентов
+            button = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton(
+                        "📸 СДЕЛАТЬ ФОТО",
+                        url=f"https://t.me/{BOT_USERNAME}?start={key}"
+                    )
+                ]
+            ])
+
+            # Публикуем ГОТОВОЕ сгенерированное изображение в канал
+            channel_message = await context.bot.send_photo(
                 chat_id=CHANNEL_USERNAME,
-                photo=reference_file_id,
+                photo=output,
                 caption=caption,
                 reply_markup=button
             )
 
+            # Получаем file_id уже опубликованного изображения
+            generated_file_id = None
+
+            if channel_message.photo:
+                generated_file_id = channel_message.photo[-1].file_id
+
+            # Сохраняем пример в выбранную фотосессию
+            if "gallery_items" not in SESSIONS[key]:
+                SESSIONS[key]["gallery_items"] = []
+
+            if generated_file_id:
+                SESSIONS[key]["reference_image_file_id"] = generated_file_id
+
+                SESSIONS[key]["gallery_items"].append({
+                    "reference_image_file_id": generated_file_id,
+                    "prompt": channel_prompt,
+                    "caption": caption
+                })
+
+            save_sessions(SESSIONS)
+
+            # Очищаем состояние админа
             context.user_data.clear()
 
             await update.message.reply_text(
-                "✅ Пост опубликован в канал.",
+                "✅ Готово!\n\n"
+                "Изображение создано по твоему промту "
+                "и опубликовано в канал 📢",
                 reply_markup=admin_keyboard()
             )
 
@@ -667,12 +723,15 @@ async def photo_handler(update, context):
             logger.exception("Channel post error")
 
             await update.message.reply_text(
-                "❌ Не удалось опубликовать пост.\n\n"
-                "Проверь, что бот добавлен в канал и имеет права администратора."
+                "❌ Не удалось создать или опубликовать пост.\n\n"
+                "Проверь логи Render."
             )
 
         return
 
+    # =========================
+    # 📸 КЛИЕНТСКАЯ ГЕНЕРАЦИЯ
+    # =========================
     style = context.user_data.get("selected_style")
 
     if not style or style not in SESSIONS:
@@ -696,16 +755,18 @@ async def photo_handler(update, context):
 
         image_file = io.BytesIO(bytes(photo_bytes))
         image_file.name = "photo.jpg"
- 
 
         reference_file_id = session.get("reference_image_file_id")
         reference_file = None
 
         if reference_file_id:
-           reference_telegram_file = await context.bot.get_file(reference_file_id)
-           reference_bytes = await reference_telegram_file.download_as_bytearray()
-           reference_file = io.BytesIO(bytes(reference_bytes))
-           reference_file.name = "reference.jpg"
+            reference_telegram_file = await context.bot.get_file(
+                reference_file_id
+            )
+            reference_bytes = await reference_telegram_file.download_as_bytearray()
+
+            reference_file = io.BytesIO(bytes(reference_bytes))
+            reference_file.name = "reference.jpg"
 
         if reference_file:
             prompt = f"""
@@ -747,7 +808,7 @@ async def photo_handler(update, context):
                     image=image_file,
                     prompt=session.get("prompt", ""),
                     size="1024x1536"
- )
+                )
 
         if not is_admin(update) and context.user_data.get("free_used"):
             await update.message.reply_text(
@@ -756,23 +817,39 @@ async def photo_handler(update, context):
                 reply_markup=payment_keyboard()
             )
             return
-    
+
         result = await asyncio.to_thread(generate_image)
+
         if not result.data or not getattr(result.data[0], "b64_json", None):
             raise RuntimeError("OpenAI returned no image")
-        generated_bytes = base64.b64decode(result.data[0].b64_json)
+
+        generated_bytes = base64.b64decode(
+            result.data[0].b64_json
+        )
+
         output = io.BytesIO(generated_bytes)
         output.name = "ai_photo.png"
+
         await update.message.reply_photo(
             photo=output,
-            caption=f"✨ Готово!\n\n{session['title']}\n\nХочешь ещё фото? Выбери другую фотосессию 👇",
+            caption=(
+                f"✨ Готово!\n\n"
+                f"{session['title']}\n\n"
+                "Хочешь ещё фото? Выбери другую фотосессию 👇"
+            ),
             reply_markup=client_keyboard(),
         )
+
         if not is_admin(update):
             context.user_data["free_used"] = True
+
     except Exception:
         logger.exception("Image generation error")
-        await update.message.reply_text("😔 Не удалось создать фотографию.\n\nПопробуй отправить фото ещё раз.")
+
+        await update.message.reply_text(
+            "😔 Не удалось создать фотографию.\n\n"
+            "Попробуй отправить фото ещё раз."
+        )
 
 async def unknown_text(update, context):
     if is_admin(update) and context.user_data.get("admin_state"):
