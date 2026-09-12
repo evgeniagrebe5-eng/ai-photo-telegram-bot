@@ -565,10 +565,19 @@ async def admin_text_handler(update, context):
 
     if state == "channel_caption":
         context.user_data["channel_caption"] = text
-        context.user_data["admin_state"] = "channel_photo"
-        await update.message.reply_text("📸 Теперь отправь фото для поста.")
+        context.user_data["admin_state"] = "channel_prompt"
+        await update.message.reply_text(
+            "✨ Теперь отправь промт для изображения."
+        )
         return
 
+    if state == "channel_prompt":
+        context.user_data["channel_prompt"] = text
+        context.user_data["admin_state"] = "channel_photo"
+        await update.message.reply_text(
+            "📸 Отлично! Теперь отправь фото для поста."
+        )
+        return
     if state == "add_title":
         context.user_data["new_title"] = text
         context.user_data["admin_state"] = "add_prompt"
