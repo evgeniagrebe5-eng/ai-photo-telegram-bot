@@ -855,7 +855,7 @@ async def photo_handler(update, context):
             )
             return
 
-      result = await asyncio.to_thread(generate_image)
+result = await asyncio.to_thread(generate_image)
 
       if not result.data or not getattr(result.data[0], "b64_json", None):
          raise RuntimeError("OpenAI returned no image")
@@ -865,7 +865,7 @@ async def photo_handler(update, context):
 
       generated_bytes = base64.b64decode(
       result.data[0].b64_json
-)      
+)            
              
             
 
