@@ -847,7 +847,7 @@ async def photo_handler(update, context):
                     size="1024x1536"
                 )
 
-        if not is_admin(update) and context.user_data.get("free_used"):
+        if not is_admin(update) and update.effective_user.id not in FREE_USERS and context.user_data.get("free_used"):
             await update.message.reply_text(
                 "🎁 Бесплатная генерация уже использована.\n\n"
                 "Выбери пакет фотографий 👇",
@@ -857,7 +857,8 @@ async def photo_handler(update, context):
 
         result = await asyncio.to_thread(generate_image)
 
-        if not result.data or not getattr(result.data[0], "b64_json", None):
+        if not is_admin(update) and update.effective_user.id not in FREE_USERS:
+    context.user_data["free_used"] = True
             raise RuntimeError("OpenAI returned no image")
 
         generated_bytes = base64.b64decode(
