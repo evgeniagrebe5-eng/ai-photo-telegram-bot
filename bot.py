@@ -877,7 +877,7 @@ async def photo_handler(update, context):
             reply_markup=client_keyboard(),
         )
 
-        if not is_admin(update) and update.effective_user.id not in FREE_USERS and context.user_data.get("free_used"):
+        if not is_admin(update) and update.effective_user.id not in FREE_USERS and context.user_data.get("free_used"): True
             
 
     except Exception:
