@@ -885,8 +885,8 @@ async def photo_handler(update, context):
         
             
 
-        except Exception:
-            logger.exception("Image generation error")
+    except Exception:
+        logger.exception("Image generation error")
 
             await update.message.reply_text(
             "😔 Не удалось создать фотографию.\n\n"
