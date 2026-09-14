@@ -885,10 +885,10 @@ result.data[0].b64_json
         
             
 
-    except Exception:
-        logger.exception("Image generation error")
+        except Exception:
+            logger.exception("Image generation error")
 
-        await update.message.reply_text(
+            await update.message.reply_text(
             "😔 Не удалось создать фотографию.\n\n"
             "Попробуй отправить фото ещё раз."
         )
