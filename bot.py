@@ -160,10 +160,19 @@ USERS = load_users()
 telegram_app = Application.builder().token(BOT_TOKEN).build()
 
 def client_keyboard():
-    return InlineKeyboardMarkup([
+    buttons = [
         [InlineKeyboardButton(s["title"], callback_data=f"style:{k}")]
         for k, s in SESSIONS.items()
+    ]
+
+    buttons.append([
+        InlineKeyboardButton(
+            "✨ СВОЙ ПРОМТ",
+            callback_data="custom_prompt"
+        )
     ])
+
+    return InlineKeyboardMarkup(buttons)
 def payment_keyboard():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📸 1 фото — 500 ₸", callback_data="buy:1")],
@@ -455,7 +464,15 @@ async def callback_handler(update, context):
             reply_markup=InlineKeyboardMarkup(buttons)
         )
         return
+    if data == "custom_prompt":
+        context.user_data["custom_prompt_state"] = "waiting_prompt"
 
+         await query.message.reply_text(
+            "✨ СВОЙ ПРОМТ\n\n"
+            "Напиши, какое фото ты хочешь получить.\n\n"
+            "Можно описать сцену своими словами — я использую твой промт для генерации."
+        )
+        return
     if data.startswith("channel_style:"):
         key = data.split(":", 1)[1]
 
