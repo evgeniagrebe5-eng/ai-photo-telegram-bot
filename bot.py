@@ -888,7 +888,32 @@ async def photo_handler(update, context):
 
             
 
-        result = await asyncio.to_thread(generate_image)
+                result = await asyncio.to_thread(generate_image)
+
+        if not result.data or not getattr(result.data[0], "b64_json", None):
+            raise RuntimeError("OpenAI returned no image")
+
+        generated_bytes = base64.b64decode(
+            result.data[0].b64_json
+        )
+
+        if not is_admin(update) and update.effective_user.id not in FREE_USERS:
+            context.user_data["free_used"] = True
+
+        output = io.BytesIO(generated_bytes)
+        output.name = "ai_photo.png"
+
+        await update.message.reply_photo(
+            photo=output,
+            caption=(
+                f"✨ Готово!\n\n"
+                f"{session['title']}\n\n"
+                "Хочешь ещё фото? Выбери другую фотосессию 👇"
+            ),
+            reply_markup=client_keyboard(),
+        )
+
+    except Exception:
 
         
             
