@@ -863,8 +863,8 @@ async def photo_handler(update, context):
             if not is_admin(update) and update.effective_user.id not in FREE_USERS:
                 context.user_data["free_used"] = True
 
-              generated_bytes = base64.b64decode(
-                  result.data[0].b64_json
+                generated_bytes = base64.b64decode(
+                    result.data[0].b64_json
               )
              
             
