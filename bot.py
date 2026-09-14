@@ -661,7 +661,14 @@ async def admin_text_handler(update, context):
         title = SESSIONS[key]["title"]
         context.user_data.clear()
         await update.message.reply_text(f"✅ Промт обновлён!\n\n{title}", reply_markup=admin_keyboard())
+    if context.user_data.get("custom_prompt_state") == "waiting_prompt":
+        context.user_data["custom_prompt"] = update.message.text
+        context.user_data["custom_prompt_state"] = "waiting_photo"
 
+        await update.message.reply_text(
+            "📸 Отлично! Теперь отправь свою фотографию."
+        )
+        return
 async def photo_handler(update, context):
     if not update.message:
         return
