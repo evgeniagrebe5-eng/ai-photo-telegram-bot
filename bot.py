@@ -857,11 +857,11 @@ async def photo_handler(update, context):
 
             result = await asyncio.to_thread(generate_image)
 
-              if not result.data or not getattr(result.data[0], "b64_json", None):
-                  raise RuntimeError("OpenAI returned no image")
+            if not result.data or not getattr(result.data[0], "b64_json", None):
+                raise RuntimeError("OpenAI returned no image")
 
-              if not is_admin(update) and update.effective_user.id not in FREE_USERS:
-                  context.user_data["free_used"] = True
+            if not is_admin(update) and update.effective_user.id not in FREE_USERS:
+                context.user_data["free_used"] = True
 
               generated_bytes = base64.b64decode(
                   result.data[0].b64_json
