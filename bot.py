@@ -661,14 +661,21 @@ async def admin_text_handler(update, context):
         title = SESSIONS[key]["title"]
         context.user_data.clear()
         await update.message.reply_text(f"✅ Промт обновлён!\n\n{title}", reply_markup=admin_keyboard())
-    if context.user_data.get("custom_prompt_state") == "waiting_prompt":
-        context.user_data["custom_prompt"] = update.message.text
-        context.user_data["custom_prompt_state"] = "waiting_photo"
 
-        await update.message.reply_text(
-            "📸 Отлично! Теперь отправь свою фотографию."
-        )
         return
+async def custom_prompt_text_handler(update, context):
+    if not update.message or not update.message.text:
+        return
+
+    if context.user_data.get("custom_prompt_state") != "waiting_prompt":
+        return
+
+    context.user_data["custom_prompt"] = update.message.text.strip()
+    context.user_data["custom_prompt_state"] = "waiting_photo"
+
+    await update.message.reply_text(
+        "📸 Отлично! Теперь отправь свою фотографию."
+    )        
 async def photo_handler(update, context):
     if not update.message:
         return
@@ -927,8 +934,8 @@ telegram_app.add_handler(CommandHandler("admin", admin_command))
 telegram_app.add_handler(CallbackQueryHandler(callback_handler))
 telegram_app.add_handler(MessageHandler(filters.PHOTO, photo_handler))
 telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, admin_text_handler))
+telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, custom_prompt_text_handler))
 telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, unknown_text))
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting Telegram application...")
