@@ -467,7 +467,7 @@ async def callback_handler(update, context):
     if data == "custom_prompt":
         context.user_data["custom_prompt_state"] = "waiting_prompt"
 
-         await query.message.reply_text(
+            await query.message.reply_text(
             "✨ СВОЙ ПРОМТ\n\n"
             "Напиши, какое фото ты хочешь получить.\n\n"
             "Можно описать сцену своими словами — я использую твой промт для генерации."
