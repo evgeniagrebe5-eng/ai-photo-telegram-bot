@@ -470,7 +470,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["channel_style"] = key
         await query.message.reply_text(f"📢 Пост для {SESSIONS[key]['title']}\n\nНапиши текст поста.")
         return
-        if data.startswith("addphoto:"):
+    if data.startswith("addphoto:"):
         key = data.split(":", 1)[1]
 
         if key not in SESSIONS:
