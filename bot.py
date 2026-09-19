@@ -224,6 +224,7 @@ def admin_keyboard():
         [InlineKeyboardButton("🗑 Удалить фотосессию", callback_data="admin:delete")],
         [InlineKeyboardButton("📢 Пост в канал", callback_data="admin:channel")],
         [InlineKeyboardButton("📋 Мои фотосессии", callback_data="admin:list")],
+        [InlineKeyboardButton("📸 Добавить фото в фотосессию", callback_data="admin:addphoto")],
         [InlineKeyboardButton("🏠 Главное меню", callback_data="admin:home")],
     ])
 
@@ -416,7 +417,27 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["admin_state"] = "add_title"
         await query.message.reply_text("➕ Напиши название новой фотосессии.")
         return
+    if data == "admin:addphoto":
+        buttons = [
+            [InlineKeyboardButton(
+                session["title"],
+                callback_data=f"addphoto:{key}"
+            )]
+            for key, session in SESSIONS.items()
+        ]
 
+        buttons.append([
+            InlineKeyboardButton(
+                "⬅️ НАЗАД",
+                callback_data="admin:home"
+            )
+        ])
+
+        await query.message.reply_text(
+            "📸 Выбери фотосессию, куда добавить фото:",
+            reply_markup=InlineKeyboardMarkup(buttons),
+        )
+        return    
     if data == "admin:channel":
         buttons = [[InlineKeyboardButton(s["title"], callback_data=f"channel_style:{k}")] for k, s in SESSIONS.items()]
         buttons.append([InlineKeyboardButton("🔙 Назад", callback_data="admin:home")])
@@ -449,7 +470,24 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["channel_style"] = key
         await query.message.reply_text(f"📢 Пост для {SESSIONS[key]['title']}\n\nНапиши текст поста.")
         return
+        if data.startswith("addphoto:"):
+        key = data.split(":", 1)[1]
 
+        if key not in SESSIONS:
+            await query.message.reply_text(
+                "❌ Фотосессия не найдена.",
+                reply_markup=admin_keyboard()
+            )
+            return
+
+        context.user_data["admin_state"] = "add_photo_prompt"
+        context.user_data["add_photo_key"] = key
+
+        await query.message.reply_text(
+            f"📸 Добавление фото в: {SESSIONS[key]['title']}\n\n"
+            "Шаг 1. Отправь промт для этого фото."
+        )
+        return
     if data.startswith("edit:"):
         key = data.split(":", 1)[1]
         context.user_data["admin_state"] = "edit_prompt"
@@ -504,7 +542,26 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 context.user_data.clear()
                 await update.message.reply_text("✅ Промт обновлён.", reply_markup=admin_keyboard())
             return
+        if state == "add_photo_prompt":
+            key = context.user_data.get("add_photo_key")
 
+            if key not in SESSIONS:
+                context.user_data.clear()
+                await update.message.reply_text(
+                    "❌ Фотосессия не найдена.",
+                    reply_markup=admin_keyboard(),
+                )
+                return
+
+            context.user_data["add_photo_prompt"] = text
+            context.user_data["admin_state"] = "add_photo_photo"
+
+            await update.message.reply_text(
+                "📸 Шаг 2. Отправь фото.\n\n"
+                "Оно будет сохранено только в фотосессии "
+                "и не будет опубликовано в канале."
+            )
+            return
     if context.user_data.get("mode") == "custom_prompt":
         context.user_data["custom_prompt"] = text
         context.user_data["mode"] = "custom_photo"
@@ -578,7 +635,40 @@ async def process_generation(update, context, prompt, reference_file_id=None):
 async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
         return
+    if is_admin(update) and context.user_data.get("admin_state") == "add_photo_photo":
+        key = context.user_data.get("add_photo_key")
+        prompt = context.user_data.get("add_photo_prompt", "")
 
+        if key not in SESSIONS:
+            context.user_data.clear()
+            await update.message.reply_text(
+                "❌ Фотосессия не найдена.",
+                reply_markup=admin_keyboard(),
+            )
+            return
+
+        photo_id = update.message.photo[-1].file_id
+
+        item = {
+            "file_id": photo_id,
+            "prompt": prompt,
+            "caption": SESSIONS[key]["title"],
+        }
+
+        SESSIONS[key].setdefault("items", []).append(item)
+        index = len(SESSIONS[key]["items"]) - 1
+
+        save_sessions()
+        context.user_data.clear()
+
+        await update.message.reply_text(
+            f"✅ Фото добавлено в фотосессию "
+            f"«{SESSIONS[key]['title']}».\n\n"
+            f"📸 Кадр №{index + 1} сохранён.\n"
+            "📢 В канал ничего не опубликовано.",
+            reply_markup=admin_keyboard(),
+        )
+        return
     if is_admin(update) and context.user_data.get("admin_state") == "channel_photo":
         key = context.user_data.get("channel_style")
         caption = context.user_data.get("channel_caption", "")
