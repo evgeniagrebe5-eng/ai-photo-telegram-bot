@@ -152,26 +152,46 @@ def save_free_users(users):
 
 
 FREE_USERS = load_free_users()  
-def save_sessions(data):
-    with open(PROMPTS_FILE, "w", encoding="utf-8") as f:
+def save_sessions(data=None):
+    import json
+    import os
+
+    if data is None:
+        data = SESSIONS
+
+    os.makedirs(DATA_DIR, exist_ok=True)
+
+    temp_file = PROMPTS_FILE + ".tmp"
+
+    with open(temp_file, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
+
+    os.replace(temp_file, PROMPTS_FILE)
+
 
 def load_sessions():
+    import json
+    import os
+
+    os.makedirs(DATA_DIR, exist_ok=True)
+
     if not os.path.exists(PROMPTS_FILE):
         save_sessions(DEFAULT_SESSIONS)
         return DEFAULT_SESSIONS.copy()
-    try:
-        with open(PROMPTS_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        if not data:
-            save_sessions(DEFAULT_SESSIONS)
-            return DEFAULT_SESSIONS.copy()
-        return data
-    except Exception as e:
-        logger.error("Error loading prompts.json: %s", e)
-        return DEFAULT_SESSIONS.copy()
+
+    with open(PROMPTS_FILE, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    if not isinstance(data, dict):
+        raise ValueError("Некорректный формат сессий")
+
+    return data
+
 
 SESSIONS = load_sessions()
+
 
 
 def load_users():
