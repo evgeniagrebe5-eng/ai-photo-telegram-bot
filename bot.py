@@ -1,4 +1,5 @@
 import os
+import shutil
 import io
 import json
 import base64
@@ -100,8 +101,39 @@ DEFAULT_SESSIONS = {
 """},
 }
 
-PROMPTS_FILE = "prompts.json"
-FREE_USERS_FILE = "free_users.json"
+
+# =========================
+# PERMANENT STORAGE - RENDER
+# =========================
+
+DATA_DIR = "/var/data"
+
+os.makedirs(DATA_DIR, exist_ok=True)
+
+PROMPTS_FILE = os.path.join(DATA_DIR, "prompts.json")
+FREE_USERS_FILE = os.path.join(DATA_DIR, "free_users.json")
+USERS_FILE = os.path.join(DATA_DIR, "users.json")
+
+# Copy existing JSON files to permanent storage
+# without overwriting anything already on the disk.
+
+for filename in (
+    "prompts.json",
+    "free_users.json",
+    "users.json",
+):
+    old_path = os.path.abspath(filename)
+    new_path = os.path.join(DATA_DIR, filename)
+
+    if (
+        os.path.isfile(old_path)
+        and old_path != new_path
+        and not os.path.exists(new_path)
+    ):
+        shutil.copy2(old_path, new_path)
+        logger.info("Copied %s to permanent storage", filename)
+        
+
 
 def load_free_users():
     if not os.path.exists(FREE_USERS_FILE):
@@ -140,7 +172,7 @@ def load_sessions():
         return DEFAULT_SESSIONS.copy()
 
 SESSIONS = load_sessions()
-USERS_FILE = "users.json"
+
 
 def load_users():
     if not os.path.exists(USERS_FILE):
