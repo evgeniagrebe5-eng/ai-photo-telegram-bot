@@ -174,7 +174,7 @@ def load_free_users():
         return set()
     try:
         with open(FREE_USERS_FILE, "r", encoding="utf-8") as f:
-            return set(json.load(f))
+            return {str(x) for x in json.load(f)}
     except Exception:
         logger.exception("Error loading free_users.json")
         return set()
@@ -447,6 +447,9 @@ async def callback_handler(update, context):
         )
         return
     if data.startswith("confirm:"):
+        if not is_admin(update):
+            await query.answer("Нет доступа", show_alert=True)
+            return
         parts = data.split(":", 2)
         package = parts[1]
         user_id = parts[2]
@@ -472,6 +475,8 @@ async def callback_handler(update, context):
         )
 
         save_users(users)
+        USERS.clear()
+        USERS.update(users)
 
         await context.bot.send_message(
             chat_id=int(user_id),
@@ -488,6 +493,18 @@ async def callback_handler(update, context):
             f"Клиенту выдано: {package_count[package]} фото."
         )
         return
+    if data == "custom_prompt":
+        context.user_data["custom_prompt_state"] = "waiting_prompt"
+        context.user_data.pop("custom_prompt", None)
+        context.user_data.pop("selected_gallery_index", None)
+        context.user_data.pop("selected_style", None)
+        await query.message.reply_text(
+            "✨ СВОЙ ПРОМТ\n\n"
+            "Напиши, какое фото ты хочешь получить.\n\n"
+            "Можно описать сцену своими словами — я использую твой промт для генерации."
+        )
+        return
+
     if not is_admin(update):
         return
 
@@ -516,15 +533,6 @@ async def callback_handler(update, context):
         await query.message.reply_text(
             "📢 Выбери фотосессию для поста:",
             reply_markup=InlineKeyboardMarkup(buttons)
-        )
-        return
-    if data == "custom_prompt":
-        context.user_data["custom_prompt_state"] = "waiting_prompt"
-
-        await query.message.reply_text(
-            "✨ СВОЙ ПРОМТ\n\n"
-            "Напиши, какое фото ты хочешь получить.\n\n"
-            "Можно описать сцену своими словами — я использую твой промт для генерации."
         )
         return
     if data.startswith("channel_style:"):
@@ -802,25 +810,31 @@ async def photo_handler(update, context):
     # =========================
     # 📸 КЛИЕНТСКАЯ ГЕНЕРАЦИЯ
     # =========================
+    custom_prompt = context.user_data.get("custom_prompt") if context.user_data.get("custom_prompt_state") == "waiting_photo" else None
     style = context.user_data.get("selected_style")
 
-    if not style or style not in SESSIONS:
+    if custom_prompt:
+        session = {"title": "✨ Свой промт", "prompt": custom_prompt}
+        style = None
+    elif not style or style not in SESSIONS:
         await update.message.reply_text(
-            "❌ Сначала выбери фотосессию.",
+            "❌ Сначала выбери фотосессию или нажми «СВОЙ ПРОМТ».",
             reply_markup=client_keyboard()
         )
         return
+    else:
+        session = SESSIONS[style]
 
-    session = SESSIONS[style]
+    user_id_str = str(update.effective_user.id)
+    user_record = USERS.get(user_id_str, {})
+    paid_photos = int(user_record.get("paid_photos", 0) or 0)
+    has_free = user_id_str in FREE_USERS or bool(context.user_data.get("free_used"))
+    using_paid_credit = not is_admin(update) and paid_photos > 0
+    using_free_credit = not is_admin(update) and not using_paid_credit and not has_free
 
-    # Проверяем доступ к бесплатной генерации до вызова OpenAI.
-    if (
-        not is_admin(update)
-        and update.effective_user.id not in FREE_USERS
-        and context.user_data.get("free_used")
-    ):
+    if not is_admin(update) and not using_paid_credit and not using_free_credit:
         await update.message.reply_text(
-            "🎁 Бесплатная генерация уже использована.\\n\\n"
+            "🎁 Бесплатная генерация уже использована.\n\n"
             "Выбери пакет фотографий 👇",
             reply_markup=payment_keyboard(),
         )
@@ -840,7 +854,7 @@ async def photo_handler(update, context):
         image_file.name = "photo.jpg"
 
         # Если клиент выбрал конкретный образ, используем именно его.
-        gallery_index = context.user_data.get("selected_gallery_index")
+        gallery_index = context.user_data.get("selected_gallery_index") if style else None
         gallery_items = session.get("gallery_items", [])
         selected_item = None
 
@@ -855,8 +869,8 @@ async def photo_handler(update, context):
             reference_file_id = selected_item.get("reference_image_file_id")
             prompt_text = selected_item.get("prompt") or session.get("prompt", "")
         else:
-            reference_file_id = session.get("reference_image_file_id")
-            prompt_text = session.get("prompt", "")
+            reference_file_id = session.get("reference_image_file_id") if style else None
+            prompt_text = custom_prompt or session.get("prompt", "")
 
         reference_file = None
         if reference_file_id:
@@ -912,8 +926,20 @@ async def photo_handler(update, context):
 
         generated_bytes = base64.b64decode(result.data[0].b64_json)
 
-        if not is_admin(update) and update.effective_user.id not in FREE_USERS:
-            context.user_data["free_used"] = True
+        if not is_admin(update):
+            if using_paid_credit:
+                latest_users = load_users()
+                latest_users.setdefault(user_id_str, {})
+                latest_users[user_id_str]["paid_photos"] = max(
+                    0, int(latest_users[user_id_str].get("paid_photos", 0) or 0) - 1
+                )
+                save_users(latest_users)
+                USERS.clear()
+                USERS.update(latest_users)
+            elif using_free_credit:
+                FREE_USERS.add(user_id_str)
+                save_free_users(FREE_USERS)
+                context.user_data["free_used"] = True
 
         output = io.BytesIO(generated_bytes)
         output.name = "ai_photo.png"
@@ -931,6 +957,8 @@ async def photo_handler(update, context):
         # Сбрасываем выбор конкретного образа после использования,
         # чтобы следующий запрос не применил его случайно.
         context.user_data.pop("selected_gallery_index", None)
+        context.user_data.pop("custom_prompt_state", None)
+        context.user_data.pop("custom_prompt", None)
 
     except Exception:
         logger.exception("Image generation error")
@@ -988,4 +1016,3 @@ if __name__ == "__main__":
 
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run(app, host="0.0.0.0", port=port)  
-
