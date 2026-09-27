@@ -874,18 +874,20 @@ async def photo_handler(update, context):
                 reply_markup=button
             )
 
-            # Получаем file_id уже опубликованного изображения
+            # Получаем file_id опубликованного изображения
             generated_file_id = None
 
             if channel_message.photo:
                 generated_file_id = channel_message.photo[-1].file_id
 
             # Сохраняем пример в выбранную фотосессию
-            if "gallery_items" not in SESSIONS[key]:
-                SESSIONS[key]["gallery_items"] = []
-
             if generated_file_id:
-                SESSIONS[key]["reference_image_file_id"] = generated_file_id
+                if "gallery_items" not in SESSIONS[key]:
+                    SESSIONS[key]["gallery_items"] = []
+
+                SESSIONS[key]["reference_image_file_id"] = (
+                    generated_file_id
+                )
 
                 SESSIONS[key]["gallery_items"].append({
                     "reference_image_file_id": generated_file_id,
@@ -893,7 +895,20 @@ async def photo_handler(update, context):
                     "caption": caption
                 })
 
-            save_sessions(SESSIONS)
+                # Сохраняем фотосессии на постоянный диск
+                save_sessions(SESSIONS)
+
+                logger.info(
+                    "GALLERY SAVED: session=%s, items=%s",
+                    key,
+                    len(SESSIONS[key]["gallery_items"])
+                )
+
+            else:
+                logger.error(
+                    "GALLERY ERROR: channel photo file_id not found"
+                )
+         
 
             # Очищаем состояние админа
             context.user_data.clear()
