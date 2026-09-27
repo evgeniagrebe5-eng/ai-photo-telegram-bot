@@ -107,42 +107,76 @@ DEFAULT_SESSIONS = {
 # =========================
 
 DATA_DIR = "/var/data"
-
 os.makedirs(DATA_DIR, exist_ok=True)
 
+SESSIONS_FILE = os.path.join(DATA_DIR, "sessions.json")
 PROMPTS_FILE = os.path.join(DATA_DIR, "prompts.json")
 FREE_USERS_FILE = os.path.join(DATA_DIR, "free_users.json")
 USERS_FILE = os.path.join(DATA_DIR, "users.json")
 
-# Copy existing JSON files to permanent storage
-# without overwriting anything already on the disk.
+# Migrate existing files from the app directory only when the persistent
+# disk does not already contain the corresponding file.
+for filename in ("sessions.json", "prompts.json", "free_users.json", "users.json"):
+    old_path = os.path.abspath(os.path.join("data", filename))
+    if filename == "sessions.json":
+        # Earlier versions used data/sessions.json or a root-level sessions.json.
+        candidates = [old_path, os.path.abspath(filename)]
+        destination = SESSIONS_FILE
+    else:
+        candidates = [os.path.abspath(filename)]
+        destination = os.path.join(DATA_DIR, filename)
 
-for filename in (
-    "prompts.json",
-    "free_users.json",
-    "users.json",
-):
-    old_path = os.path.abspath(filename)
-    new_path = os.path.join(DATA_DIR, filename)
+    if not os.path.exists(destination):
+        for candidate in candidates:
+            if os.path.isfile(candidate) and os.path.abspath(candidate) != os.path.abspath(destination):
+                shutil.copy2(candidate, destination)
+                logger.info("Migrated %s to persistent storage", candidate)
+                break
 
-    if (
-        os.path.isfile(old_path)
-        and old_path != new_path
-        and not os.path.exists(new_path)
-    ):
-        shutil.copy2(old_path, new_path)
-        logger.info("Copied %s to permanent storage", filename)
-        
+
+def save_sessions(data=None):
+    """Atomically save sessions to Render's persistent disk."""
+    if data is None:
+        data = SESSIONS
+    os.makedirs(DATA_DIR, exist_ok=True)
+    temp_file = SESSIONS_FILE + ".tmp"
+    try:
+        with open(temp_file, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temp_file, SESSIONS_FILE)
+        logger.info("SESSIONS SAVED: %s (%s sessions)", SESSIONS_FILE, len(data))
+    except Exception:
+        logger.exception("ERROR SAVING SESSIONS")
+        raise
+
+
+def load_sessions():
+    """Load sessions from persistent disk, creating defaults only if absent."""
+    os.makedirs(DATA_DIR, exist_ok=True)
+    if not os.path.exists(SESSIONS_FILE):
+        data = json.loads(json.dumps(DEFAULT_SESSIONS, ensure_ascii=False))
+        with open(SESSIONS_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        logger.info("Created default sessions file: %s", SESSIONS_FILE)
+        return data
+
+    with open(SESSIONS_FILE, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    if not isinstance(data, dict):
+        raise ValueError("Некорректный формат sessions.json: ожидался JSON-объект")
+    return data
 
 
 def load_free_users():
     if not os.path.exists(FREE_USERS_FILE):
         return set()
-
     try:
         with open(FREE_USERS_FILE, "r", encoding="utf-8") as f:
             return set(json.load(f))
     except Exception:
+        logger.exception("Error loading free_users.json")
         return set()
 
 
@@ -151,100 +185,8 @@ def save_free_users(users):
         json.dump(list(users), f, ensure_ascii=False, indent=2)
 
 
-FREE_USERS = load_free_users()  
-# ===== PERSISTENT SESSIONS STORAGE =====
-
-import os
-import json
-import logging
-
-DATA_DIR = "/var/data"
-os.makedirs(DATA_DIR, exist_ok=True)
-
-PROMPTS_FILE = os.path.join(DATA_DIR, "sessions.json")
-
-
-def save_sessions(data=None):
-    """Надёжное сохранение фотосессий на постоянный диск."""
-
-    global SESSIONS
-
-    if data is None:
-        data = SESSIONS
-
-    os.makedirs(DATA_DIR, exist_ok=True)
-
-    temp_file = PROMPTS_FILE + ".tmp"
-
-    try:
-        with open(temp_file, "w", encoding="utf-8") as f:
-            json.dump(
-                data,
-                f,
-                ensure_ascii=False,
-                indent=2
-            )
-            f.flush()
-            os.fsync(f.fileno())
-
-        os.replace(temp_file, PROMPTS_FILE)
-
-        logging.info(
-            "SESSIONS SAVED: %s",
-            PROMPTS_FILE
-        )
-
-    except Exception:
-        logging.exception("ERROR SAVING SESSIONS")
-        raise
-
-
-def load_sessions():
-    """Загрузка фотосессий с постоянного диска."""
-    os.makedirs(DATA_DIR, exist_ok=True)
-
-    if not os.path.exists(PROMPTS_FILE):
-        data = DEFAULT_SESSIONS.copy()
-        with open(PROMPTS_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        logger.info("Created sessions file: %s", PROMPTS_FILE)
-        return data
-
-    with open(PROMPTS_FILE, "r", encoding="utf-8") as f:
-        data = json.load(f)
-
-    if not isinstance(data, dict):
-        raise ValueError("Некорректный формат sessions.json")
-
-    return data
-
-
+FREE_USERS = load_free_users()
 SESSIONS = load_sessions()
-
-# ===== END PERSISTENT SESSIONS STORAGE =====
-
-
-def load_sessions():
-    import json
-    import os
-
-    os.makedirs(DATA_DIR, exist_ok=True)
-
-    if not os.path.exists(PROMPTS_FILE):
-        save_sessions(DEFAULT_SESSIONS)
-        return DEFAULT_SESSIONS.copy()
-
-    with open(PROMPTS_FILE, "r", encoding="utf-8") as f:
-        data = json.load(f)
-
-    if not isinstance(data, dict):
-        raise ValueError("Некорректный формат сессий")
-
-    return data
-
-
-SESSIONS = load_sessions()
-
 
 
 def load_users():
@@ -252,14 +194,21 @@ def load_users():
         return {}
     try:
         with open(USERS_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception as e:
-        logger.error("Error loading users.json: %s", e)
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        logger.exception("Error loading users.json")
         return {}
 
+
 def save_users(users):
-    with open(USERS_FILE, "w", encoding="utf-8") as f:
+    temp_file = USERS_FILE + ".tmp"
+    with open(temp_file, "w", encoding="utf-8") as f:
         json.dump(users, f, ensure_ascii=False, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(temp_file, USERS_FILE)
+
 
 USERS = load_users()
 telegram_app = Application.builder().token(BOT_TOKEN).build()
@@ -1040,6 +989,3 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run(app, host="0.0.0.0", port=port)  
 
-
-
-   
