@@ -201,41 +201,28 @@ def save_sessions(data=None):
 
 def load_sessions():
     """Загрузка фотосессий с постоянного диска."""
-
     os.makedirs(DATA_DIR, exist_ok=True)
 
     if not os.path.exists(PROMPTS_FILE):
-        logging.error(
-            "SESSIONS FILE NOT FOUND: %s",
-            PROMPTS_FILE
-        )
-        return DEFAULT_SESSIONS.copy()
-
-    try:
-        with open(PROMPTS_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-
-        if not isinstance(data, dict):
-            raise ValueError(
-                "Файл фотосессий должен содержать словарь"
-            )
-
-        logging.info(
-            "SESSIONS LOADED: %s, sessions=%s",
-            PROMPTS_FILE,
-            len(data)
-        )
-
+        data = DEFAULT_SESSIONS.copy()
+        with open(PROMPTS_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        logger.info("Created sessions file: %s", PROMPTS_FILE)
         return data
 
-    except Exception:
-        logging.exception("ERROR LOADING SESSIONS")
-        raise
+    with open(PROMPTS_FILE, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    if not isinstance(data, dict):
+        raise ValueError("Некорректный формат sessions.json")
+
+    return data
 
 
 SESSIONS = load_sessions()
 
 # ===== END PERSISTENT SESSIONS STORAGE =====
+
 
 def load_sessions():
     import json
@@ -606,73 +593,6 @@ async def callback_handler(update, context):
             "Теперь отправь текст поста."
         )
         return
-        await query.message.reply_text(
-            "⏳ Спасибо! Оплата отправлена на проверку.\n\n"
-            "После подтверждения можно будет сделать фотографии 📸"
-        )
-        return    
-    if not is_admin(update):
-        return
-
-    if data == "admin:channel":
-        if not SESSIONS:
-            await query.message.reply_text("Пока нет фотосессий.")
-            return
-        buttons = [[InlineKeyboardButton(s["title"], callback_data=f"channel_style:{k}")] for k, s in SESSIONS.items()]
-        buttons.append([InlineKeyboardButton("🔙 Назад", callback_data="admin:home")])
-        await query.message.reply_text("📢 Выбери фотосессию для поста:", reply_markup=InlineKeyboardMarkup(buttons))
-        return
-
-    if data.startswith("style:"):
-       key = data.split(":", 1)[1]
-
-    if key not in SESSIONS:
-        await query.message.reply_text(
-            "❌ Эта фотосессия больше недоступна."
-        )
-        return
-
-    context.user_data["selected_style"] = key
-
-    gallery_items = SESSIONS[key].get("gallery_items", [])
-
-    if gallery_items:
-        await query.message.reply_text(
-            f"{SESSIONS[key]['title']}\n\n"
-            "✨ Выбери понравившийся образ 👇"
-        )
-
-        for index, item in enumerate(gallery_items):
-            caption = item.get("caption", "").strip()
-
-            text = f"{SESSIONS[key]['title']}"
-            if caption:
-                text += f"\n\n{caption}"
-
-            await query.message.reply_photo(
-                photo=item["reference_image_file_id"],
-                caption=text,
-                reply_markup=InlineKeyboardMarkup([
-                    [
-                        InlineKeyboardButton(
-                            "📸 СДЕЛАТЬ ТАКОЕ ФОТО",
-                            callback_data=f"gallery:{key}:{index}"
-                        )
-                    ]
-                ])
-            )
-
-        return
-
-    # Если примеров ещё нет — оставляем старое поведение
-    await query.message.reply_text(
-        f"{SESSIONS[key]['title']}\n\n"
-        "Отлично ❤️\n"
-        "Теперь просто отправь свою фотографию 📸\n\n"
-        "Промт писать не нужно."
-    )
-    return
-
     if data == "admin:home":
         context.user_data.clear()
         await query.message.reply_text("👑 Панель администратора\n\nВыбери действие:", reply_markup=admin_keyboard())
@@ -944,9 +864,22 @@ async def photo_handler(update, context):
 
     session = SESSIONS[style]
 
+    # Проверяем доступ к бесплатной генерации до вызова OpenAI.
+    if (
+        not is_admin(update)
+        and update.effective_user.id not in FREE_USERS
+        and context.user_data.get("free_used")
+    ):
+        await update.message.reply_text(
+            "🎁 Бесплатная генерация уже использована.\\n\\n"
+            "Выбери пакет фотографий 👇",
+            reply_markup=payment_keyboard(),
+        )
+        return
+
     await update.message.reply_text(
-        "📸 Фото получила!\n\n"
-        "✨ Начинаю обработку...\n"
+        "📸 Фото получила!\\n\\n"
+        "✨ Начинаю обработку...\\n"
         "Это может занять некоторое время."
     )
 
@@ -957,15 +890,29 @@ async def photo_handler(update, context):
         image_file = io.BytesIO(bytes(photo_bytes))
         image_file.name = "photo.jpg"
 
-        reference_file_id = session.get("reference_image_file_id")
+        # Если клиент выбрал конкретный образ, используем именно его.
+        gallery_index = context.user_data.get("selected_gallery_index")
+        gallery_items = session.get("gallery_items", [])
+        selected_item = None
+
+        if gallery_index is not None:
+            if not (0 <= gallery_index < len(gallery_items)):
+                context.user_data.pop("selected_gallery_index", None)
+                await update.message.reply_text(
+                    "❌ Этот образ больше недоступен. Выбери образ ещё раз."
+                )
+                return
+            selected_item = gallery_items[gallery_index]
+            reference_file_id = selected_item.get("reference_image_file_id")
+            prompt_text = selected_item.get("prompt") or session.get("prompt", "")
+        else:
+            reference_file_id = session.get("reference_image_file_id")
+            prompt_text = session.get("prompt", "")
+
         reference_file = None
-
         if reference_file_id:
-            reference_telegram_file = await context.bot.get_file(
-                reference_file_id
-            )
+            reference_telegram_file = await context.bot.get_file(reference_file_id)
             reference_bytes = await reference_telegram_file.download_as_bytearray()
-
             reference_file = io.BytesIO(bytes(reference_bytes))
             reference_file.name = "reference.jpg"
 
@@ -987,48 +934,34 @@ async def photo_handler(update, context):
 Не заменяй человека на человека из первого изображения.
 Не меняй лицо клиента.
 
-{session.get("prompt", "")}
+{prompt_text}
 
 Итог — реалистичная профессиональная фотография.
 Без пластиковой кожи, beauty-фильтров, CGI, мультяшности
 и искусственного изменения лица.
 """
-
             def generate_image():
                 return client.images.edit(
                     model="gpt-image-2",
                     image=[reference_file, image_file],
                     prompt=prompt,
-                    size="1024x1536"
+                    size="1024x1536",
                 )
-
         else:
             def generate_image():
                 return client.images.edit(
                     model="gpt-image-2",
                     image=image_file,
-                    prompt=session.get("prompt", ""),
-                    size="1024x1536"
+                    prompt=prompt_text,
+                    size="1024x1536",
                 )
 
-        if not is_admin(update) and update.effective_user.id not in FREE_USERS and context.user_data.get("free_used"):
-            await update.message.reply_text(
-                "🎁 Бесплатная генерация уже использована.\n\n"
-                "Выбери пакет фотографий 👇",
-                reply_markup=payment_keyboard()
-            )
-            return
-
-            
-
-    result = await asyncio.to_thread(generate_image)
+        result = await asyncio.to_thread(generate_image)
 
         if not result.data or not getattr(result.data[0], "b64_json", None):
             raise RuntimeError("OpenAI returned no image")
 
-        generated_bytes = base64.b64decode(
-            result.data[0].b64_json
-        )
+        generated_bytes = base64.b64decode(result.data[0].b64_json)
 
         if not is_admin(update) and update.effective_user.id not in FREE_USERS:
             context.user_data["free_used"] = True
@@ -1039,23 +972,21 @@ async def photo_handler(update, context):
         await update.message.reply_photo(
             photo=output,
             caption=(
-                f"✨ Готово!\n\n"
-                f"{session['title']}\n\n"
+                f"✨ Готово!\\n\\n"
+                f"{session['title']}\\n\\n"
                 "Хочешь ещё фото? Выбери другую фотосессию 👇"
             ),
             reply_markup=client_keyboard(),
         )
 
-    except Exception:
-
-        
-            
+        # Сбрасываем выбор конкретного образа после использования,
+        # чтобы следующий запрос не применил его случайно.
+        context.user_data.pop("selected_gallery_index", None)
 
     except Exception:
         logger.exception("Image generation error")
-
         await update.message.reply_text(
-            "😔 Не удалось создать фотографию.\n\n"
+            "😔 Не удалось создать фотографию.\\n\\n"
             "Попробуй отправить фото ещё раз."
         )
 
@@ -1068,9 +999,9 @@ telegram_app.add_handler(CommandHandler("start", start))
 telegram_app.add_handler(CommandHandler("admin", admin_command))
 telegram_app.add_handler(CallbackQueryHandler(callback_handler))
 telegram_app.add_handler(MessageHandler(filters.PHOTO, photo_handler))
-telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, admin_text_handler))
-telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, custom_prompt_text_handler))
-telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, unknown_text))
+telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, admin_text_handler), group=0)
+telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, custom_prompt_text_handler), group=1)
+telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, unknown_text), group=2)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting Telegram application...")
@@ -1108,3 +1039,7 @@ if __name__ == "__main__":
 
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run(app, host="0.0.0.0", port=port)  
+
+
+
+   
