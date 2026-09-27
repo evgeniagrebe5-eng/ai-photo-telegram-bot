@@ -152,9 +152,22 @@ def save_free_users(users):
 
 
 FREE_USERS = load_free_users()  
+# ===== PERSISTENT SESSIONS STORAGE =====
+
+import os
+import json
+import logging
+
+DATA_DIR = "/var/data"
+os.makedirs(DATA_DIR, exist_ok=True)
+
+PROMPTS_FILE = os.path.join(DATA_DIR, "sessions.json")
+
+
 def save_sessions(data=None):
-    import json
-    import os
+    """Надёжное сохранение фотосессий на постоянный диск."""
+
+    global SESSIONS
 
     if data is None:
         data = SESSIONS
@@ -163,13 +176,66 @@ def save_sessions(data=None):
 
     temp_file = PROMPTS_FILE + ".tmp"
 
-    with open(temp_file, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-        f.flush()
-        os.fsync(f.fileno())
+    try:
+        with open(temp_file, "w", encoding="utf-8") as f:
+            json.dump(
+                data,
+                f,
+                ensure_ascii=False,
+                indent=2
+            )
+            f.flush()
+            os.fsync(f.fileno())
 
-    os.replace(temp_file, PROMPTS_FILE)
+        os.replace(temp_file, PROMPTS_FILE)
 
+        logging.info(
+            "SESSIONS SAVED: %s",
+            PROMPTS_FILE
+        )
+
+    except Exception:
+        logging.exception("ERROR SAVING SESSIONS")
+        raise
+
+
+def load_sessions():
+    """Загрузка фотосессий с постоянного диска."""
+
+    os.makedirs(DATA_DIR, exist_ok=True)
+
+    if not os.path.exists(PROMPTS_FILE):
+        logging.error(
+            "SESSIONS FILE NOT FOUND: %s",
+            PROMPTS_FILE
+        )
+        return DEFAULT_SESSIONS.copy()
+
+    try:
+        with open(PROMPTS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        if not isinstance(data, dict):
+            raise ValueError(
+                "Файл фотосессий должен содержать словарь"
+            )
+
+        logging.info(
+            "SESSIONS LOADED: %s, sessions=%s",
+            PROMPTS_FILE,
+            len(data)
+        )
+
+        return data
+
+    except Exception:
+        logging.exception("ERROR LOADING SESSIONS")
+        raise
+
+
+SESSIONS = load_sessions()
+
+# ===== END PERSISTENT SESSIONS STORAGE =====
 
 def load_sessions():
     import json
