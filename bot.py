@@ -188,7 +188,9 @@ def save_free_users(users):
 
 FREE_USERS = load_free_users()
 SESSIONS = load_sessions()
-
+# ДОБАВЬТЕ ЭТИ ДВЕ СТРОКИ ЗДЕСЬ, чтобы папка для фото всегда существовала:
+PHOTOS_DIR = os.path.join(DATA_DIR, "photos")
+os.makedirs(PHOTOS_DIR, exist_ok=True)
 
 def load_users():
     if not os.path.exists(USERS_FILE):
