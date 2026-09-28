@@ -813,7 +813,51 @@ async def photo_handler(update, context):
                 "и опубликовано в канал 📢",
                 reply_markup=admin_keyboard()
             )
+        # ==========================================
+        # 🛠️ АДМИН: РУЧНОЕ ДОБАВЛЕНИЕ ФОТО В СЕССИЮ
+        # ==========================================
+        elif is_admin(update) and context.user_data.get("admin_state") is not None and context.user_data.get("edit_key") is not None:
+            
+            edit_key = context.user_data.get("edit_key")
+            
+            if not edit_key or edit_key not in SESSIONS:
+                context.user_data.clear()
+                await update.message.reply_text("❌ Ошибка: фотосессия не найдена.")
+                return
 
+            # Получаем file_id присланного вами фото
+            admin_file_id = update.message.photo[-1].file_id
+            
+            try:
+                # 1. Скачиваем физический файл на ваш постоянный диск /var/data/photos/
+                tg_file = await context.bot.get_file(admin_file_id)
+                local_filename = f"admin_{admin_file_id}.jpg"
+                local_photo_path = os.path.join(PHOTOS_DIR, local_filename)
+                await tg_file.download_to_drive(local_photo_path)
+                
+                # 2. Инициализируем галерею, если она пустая
+                if "gallery_items" not in SESSIONS[edit_key]:
+                    SESSIONS[edit_key]["gallery_items"] = []
+                
+                # 3. Сохраняем в JSON локальный путь и file_id
+                SESSIONS[edit_key]["gallery_items"].append({
+                    "local_path": local_photo_path,
+                    "reference_image_file_id": admin_file_id,
+                    "prompt": "Добавлено вручную через админку",
+                    "caption": ""
+                })
+                
+                # Сохраняем обновленный JSON на диск
+                save_sessions(SESSIONS)
+                
+                context.user_data.clear()
+                await update.message.reply_text("✅ Фотография успешно добавлена в фотосессию и сохранена на диск!")
+                
+            except Exception as e:
+                logger.error(f"Ошибка при сохранении фото из админки: {e}")
+                await update.message.reply_text("❌ Не удалось сохранить файл на диск. Проверьте логи.")
+            return
+                
         except Exception:
             logger.exception("Channel post error")
 
