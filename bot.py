@@ -108,7 +108,8 @@ DEFAULT_SESSIONS = {
 
 DATA_DIR = "/var/data"
 os.makedirs(DATA_DIR, exist_ok=True)
-
+PHOTOS_DIR = os.path.join(DATA_DIR, "photos")
+os.makedirs(PHOTOS_DIR, exist_ok=True)
 SESSIONS_FILE = os.path.join(DATA_DIR, "sessions.json")
 PROMPTS_FILE = os.path.join(DATA_DIR, "prompts.json")
 FREE_USERS_FILE = os.path.join(DATA_DIR, "free_users.json")
@@ -757,20 +758,34 @@ async def photo_handler(update, context):
             if channel_message.photo:
                 generated_file_id = channel_message.photo[-1].file_id
 
-            # Сохраняем пример в выбранную фотосессию
-            if generated_file_id:
+            # Сохраняем пример в выбранную фотосессию на постоянный диск
+        if generated_file_id:
+            try:
+                # 1. Скачиваем физический файл из Telegram на диск Render
+                tg_file = await context.bot.get_file(generated_file_id)
+                local_filename = f"{generated_file_id}.jpg"
+                local_photo_path = os.path.join(PHOTOS_DIR, local_filename)
+                await tg_file.download_to_drive(local_photo_path)
+                
+                # 2. Инициализируем галерею, если её нет
                 if "gallery_items" not in SESSIONS[key]:
                     SESSIONS[key]["gallery_items"] = []
-
-                SESSIONS[key]["reference_image_file_id"] = (
-                    generated_file_id
-                )
-
+                
+                # Обновляем главный file_id сессии (на всякий случай)
+                SESSIONS[key]["reference_image_file_id"] = generated_file_id
+                
+                # 3. Записываем в JSON локальный путь "local_path" вместо "reference_image_file_id"
                 SESSIONS[key]["gallery_items"].append({
-                    "reference_image_file_id": generated_file_id,
+                    "local_path": local_photo_path,
                     "prompt": channel_prompt,
                     "caption": caption
                 })
+                
+                # Сохраняем обновленный JSON сессий
+                save_sessions(SESSIONS)
+                
+            except Exception as e:
+                logger.error(f"Ошибка при скачивании фото на диск: {e}")
 
                 # Сохраняем фотосессии на постоянный диск
                 save_sessions(SESSIONS)
