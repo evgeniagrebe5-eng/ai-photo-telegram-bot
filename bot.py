@@ -648,7 +648,7 @@ async def callback_handler(update, context):
                 
                 # 2. Инициализируем галерею, если она пустая
                 if "gallery_items" not in SESSIONS[edit_key]:
-                    SESSIONS[edit_key]["gallery_items"] = []
+                    SESSIONS[edit_key]["gallery_items"] = []        
                 
                 # 3. Сохраняем в JSON локальный путь и file_id для совместимости
                 SESSIONS[edit_key]["gallery_items"].append({
