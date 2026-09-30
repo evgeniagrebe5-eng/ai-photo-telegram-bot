@@ -629,53 +629,65 @@ async def callback_handler(update, context):
         # 🛠️ АДМИН: РУЧНОЕ ДОБАВЛЕНИЕ ФОТО В СЕССИЮ
         # ==========================================
         if is_admin(update) and context.user_data.get("admin_state") == "add_photo_photo":
-             edit_key = context.user_data.get("add_photo_key")
+            edit_key = context.user_data.get("add_photo_key")
 
-        if not edit_key or edit_key not in SESSIONS:
-               context.user_data.clear()
-               await update.message.reply_text(...)
-               return
+            if not edit_key or edit_key not in SESSIONS:
+                context.user_data.clear()
+                await update.message.reply_text(
+                    "❌ Ошибка: фотосессия не найдена."
+                )
+                return
 
             # Получаем file_id присланного фото
             admin_file_id = update.message.photo[-1].file_id
-            
+
             try:
-                # 1. Скачиваем физический файл на постоянный диск Render /var/data/photos/
+                # 1. Скачиваем физический файл на постоянный диск Render
                 tg_file = await context.bot.get_file(admin_file_id)
                 local_filename = f"admin_{admin_file_id}.jpg"
                 local_photo_path = os.path.join(PHOTOS_DIR, local_filename)
                 await tg_file.download_to_drive(local_photo_path)
-                
-                # 2. Инициализируем галерею, если она пустая
+
+                # 2. Инициализируем галерею, если её ещё нет
                 if "gallery_items" not in SESSIONS[edit_key]:
-                    SESSIONS[edit_key]["gallery_items"] = []        
-                
-                # 3. Сохраняем в JSON локальный путь и file_id для совместимости
+                    SESSIONS[edit_key]["gallery_items"] = []
+
+                # 3. Сохраняем фото в фотосессию
                 SESSIONS[edit_key]["gallery_items"].append({
                     "local_path": local_photo_path,
                     "reference_image_file_id": admin_file_id,
-                    "prompt": SESSIONS[edit_key].get("prompt", "Добавлено вручную через админку"),
+                    "prompt": SESSIONS[edit_key].get(
+                        "prompt",
+                        "Добавлено вручную через админку"
+                    ),
                     "caption": ""
                 })
-                
-                # Сохраняем обновленный JSON на диск Render
+
+                # 4. Сохраняем обновлённую сессию
                 save_sessions(SESSIONS)
-                
+
+                logger.info(
+                    "MANUAL PHOTO SAVED: session=%s, path=%s, items=%s",
+                    edit_key,
+                    local_photo_path,
+                    len(SESSIONS[edit_key]["gallery_items"])
+                )
+
                 context.user_data.clear()
-                await update.message.reply_text("✅ Фотография успешно добавлена в фотосессию и сохранена на диск!")
-                
+
+                await update.message.reply_text(
+                    "✅ Фотография успешно добавлена в фотосессию и сохранена на диск!"
+                )
+
             except Exception as e:
-                logger.error(f"Ошибка при сохранении фото из админки: {e}")
-                await update.message.reply_text("❌ Не удалось сохранить файл на диск. Проверьте логи.")
-            return
+                logger.exception(
+                    f"Ошибка при сохранении фото из админки: {e}"
+                )
+                await update.message.reply_text(
+                    "❌ Не удалось сохранить файл на диск. Проверьте логи."
+                )
 
-    except Exception as e:
-        logger.exception(f"Критическая ошибка в обработчике медиа: {e}")
-        return
-
-# Поместите этот блок вне обработчика медиа, как отдельную логику для текстовых/фото сообщений клиентов
-async def handle_client_generation(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Полная обработка генерации изображений для клиентов с записью на диск Render"""
+            return        
     # =========================
     # 📸 КЛИЕНТСКАЯ ГЕНЕРАЦИЯ
     # =========================
