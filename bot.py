@@ -628,14 +628,13 @@ async def callback_handler(update, context):
         # ==========================================
         # 🛠️ АДМИН: РУЧНОЕ ДОБАВЛЕНИЕ ФОТО В СЕССИЮ
         # ==========================================
-        if is_admin(update) and context.user_data.get("admin_state") == ...
-            
-            edit_key = context.user_data.get("edit_key")
-            
+        if is_admin(update) and context.user_data.get("admin_state") == "add_photo_photo":
+             edit_key = context.user_data.get("add_photo_key")
+
             if not edit_key or edit_key not in SESSIONS:
-                context.user_data.clear()
-                await update.message.reply_text("❌ Ошибка: фотосессия не найдена.")
-                return
+               context.user_data.clear()
+               await update.message.reply_text(...)
+               return
 
             # Получаем file_id присланного фото
             admin_file_id = update.message.photo[-1].file_id
