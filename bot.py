@@ -628,7 +628,7 @@ async def callback_handler(update, context):
         # ==========================================
         # 🛠️ АДМИН: РУЧНОЕ ДОБАВЛЕНИЕ ФОТО В СЕССИЮ
         # ==========================================
-        elif is_admin(update) and context.user_data.get("admin_state") is not None and context.user_data.get("edit_key") is not None:
+        if is_admin(update) and context.user_data.get("admin_state") == ...
             
             edit_key = context.user_data.get("edit_key")
             
