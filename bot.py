@@ -631,7 +631,7 @@ async def callback_handler(update, context):
         if is_admin(update) and context.user_data.get("admin_state") == "add_photo_photo":
              edit_key = context.user_data.get("add_photo_key")
 
-               if not edit_key or edit_key not in SESSIONS:
+        if not edit_key or edit_key not in SESSIONS:
                context.user_data.clear()
                await update.message.reply_text(...)
                return
