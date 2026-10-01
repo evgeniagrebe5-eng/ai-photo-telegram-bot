@@ -1125,7 +1125,39 @@ telegram_app.add_handler(CallbackQueryHandler(callback_handler))
 telegram_app.add_handler(
     MessageHandler(filters.PHOTO, photo_handler)
 )
+# ==========================================
+# 👑 ОБРАБОТЧИКИ ТЕКСТОВЫХ СООБЩЕНИЙ (ФИКС)
+# ==========================================
+async def admin_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработка текстовых команд от администратора в панели управления"""
+    if not is_admin(update):
+        return
+        
+    state = context.user_data.get("admin_state")
+    
+    if state == "waiting_channel_prompt":
+        context.user_data["channel_prompt"] = update.message.text
+        context.user_data["admin_state"] = "waiting_channel_caption"
+        await update.message.reply_text("📢 Теперь отправь текст (описание) для поста в канале:")
+        return
+        
+    if state == "waiting_channel_caption":
+        context.user_data["channel_caption"] = update.message.text
+        context.user_data["admin_state"] = "channel_photo"
+        await update.message.reply_text("📸 Отлично! Теперь отправь исходную фотографию (референс) для генерации поста:")
+        return
 
+
+async def custom_prompt_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработка ввода собственного промта пользователем"""
+    if context.user_data.get("custom_prompt_state") == "waiting_text":
+        context.user_data["custom_prompt"] = update.message.text
+        context.user_data["custom_prompt_state"] = "waiting_photo"
+        await update.message.reply_text(
+            "✨ Твой промт успешно принят!\n\n"
+            "📸 Теперь отправь свою фотографию, которую нужно обработать:"
+        )
+        
 
 # Текстовые хендлеры по группам приоритетов
 telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, admin_text_handler), group=0)
