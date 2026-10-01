@@ -917,7 +917,7 @@ telegram_app.add_handler(CommandHandler("admin", admin_command))
 telegram_app.add_handler(CallbackQueryHandler(callback_handler))
 
 # Главный хендлер для фото (внутри него крутится вся магия photo_handler)
-telegram_app.add_handler(MessageHandler(filters.PHOTO, handle_client_generation))
+telegram_app.add_handler(MessageHandler(filters.PHOTO, photo_handler))
 
 # Текстовые хендлеры по группам приоритетов
 telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, admin_text_handler), group=0)
