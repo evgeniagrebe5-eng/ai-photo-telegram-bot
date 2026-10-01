@@ -470,7 +470,71 @@ async def callback_handler(update, context):
         )
         await query.message.reply_text("⏳ Ваша заявка отправлена администратору. Ожидайте подтверждения.")
         return
+    # ==========================================
+    # 👑 ОБРАБОТКА НАЖАТИЙ АДМИН-КНОПОК (ФИКС)
+    # ==========================================
+    if data.startswith("admin:"):
+        if not is_admin(update):
+            await query.message.reply_text("⛔ Доступ ограничен.")
+            return
+            
+        action = data.split(":", 1)[1]
+        
+        # 1. Нажатие на кнопку "📢 Пост в канал"
+        if action == "channel":
+            context.user_data.clear()
+            # Показываем админу кнопки с выбором стиля для канала
+            buttons = [
+                [InlineKeyboardButton(s["title"], callback_data=f"admin_ch_style:{k}")]
+                for k, s in SESSIONS.items()
+            ]
+            await query.message.reply_text(
+                "📢 Выбери фотосессию, к которой будет относиться пост в канале 👇",
+                reply_markup=InlineKeyboardMarkup(buttons)
+            )
+            return
 
+        # 2. Нажатие на кнопку "📸 Добавить фото в фотосессию"
+        elif action == "add_photo":
+            context.user_data.clear()
+            buttons = [
+                [InlineKeyboardButton(s["title"], callback_data=f"admin_add_photo_style:{k}")]
+                for k, s in SESSIONS.items()
+            ]
+            await query.message.reply_text(
+                "📸 Выбери фотосессию, в галерею которой хочешь вручную добавить фото референса 👇",
+                reply_markup=InlineKeyboardMarkup(buttons)
+            )
+            return
+
+        # 3. Нажатие на кнопку "🏠 Главное меню"
+        elif action == "home":
+            context.user_data.clear()
+            await query.message.reply_text("Выбери фотосессию 👇", reply_markup=client_keyboard())
+            return
+
+    # Подхватываем выбор стиля для Поста в канал
+    if data.startswith("admin_ch_style:"):
+        key = data.split(":", 1)[1]
+        context.user_data["channel_style"] = key
+        context.user_data["admin_state"] = "waiting_channel_prompt"
+        await query.message.reply_text(
+            f"Выбрана сессия: {SESSIONS[key]['title']}\n\n"
+            "✍️ Введи и отправь промт (prompt) для генерации этого поста:"
+        )
+        return
+
+    # Подхватываем выбор стиля для Ручного добавления фото в фотосессию
+    if data.startswith("admin_add_photo_style:"):
+        key = data.split(":", 1)[1]
+        context.user_data["edit_key"] = key
+        context.user_data["admin_state"] = "waiting_admin_gallery_photo"
+        await query.message.reply_text(
+            f"Выбрана сессия: {SESSIONS[key]['title']}\n\n"
+            "📸 Теперь просто отправь боту фотографию. Она автоматически скачается на диск Render и добавится в этот стиль!"
+        )
+        return
+        
     # Обработчик подтверждения оплаты админом
     if data.startswith("confirm_pay:"):
         if not is_admin(update):
