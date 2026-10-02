@@ -976,15 +976,117 @@ async def unknown_text(update, context):
 # 📸 ГЛАВНЫЙ ОБРАБОТЧИК ФОТОГРАФИЙ (ФИКС)
 # ==========================================
 async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Единая функция обработки всех изображений. 
-    Сохраняет данные на диск Render и защищает от очистки при перезапусках.
-    """
+    """Главный обработчик всех фотографий в боте"""
+    
+    # =======================================================
+    # 👑 ПЕРЕХВАТ МЕДИА ОТ АДМИНИСТРАТОРА (ФИКС)
+    # =======================================================
+    if is_admin(update) and context.user_data.get("admin_state") is not None:
+        state = context.user_data.get("admin_state")
+
+        # Если админ на Шаге 4 скинул готовое фото для канала
+        if state == "channel_photo":
+            key = context.user_data.get("channel_style")
+            caption = context.user_data.get("channel_caption", "")
+            channel_prompt = context.user_data.get("channel_prompt", "").strip()
+
+            if not key or key not in SESSIONS:
+                context.user_data.clear()
+                await update.message.reply_text("❌ Не удалось найти фотосессию.", reply_markup=admin_keyboard())
+                return
+
+            try:
+                photo_file_id = update.message.photo[-1].file_id
+
+                if "gallery_items" not in SESSIONS[key]:
+                    SESSIONS[key]["gallery_items"] = []
+                
+                current_index = len(SESSIONS[key]["gallery_items"])
+                start_parameter = f"{key}_{current_index}"
+                
+                button = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("📸 СДЕЛАТЬ ТАКОЕ ФОТО", url=f"https://t.me{BOT_USERNAME}?start={start_parameter}")]
+                ])
+
+                await update.message.reply_text("📢 Публикую готовое фото в канал...")
+
+                # Публикуем напрямую ваше фото БЕЗ генераций
+                channel_message = await context.bot.send_photo(
+                    chat_id=CHANNEL_USERNAME,
+                    photo=photo_file_id,
+                    caption=caption,
+                    reply_markup=button
+                )
+
+                generated_file_id = channel_message.photo[-1].file_id if channel_message.photo else None
+
+                if generated_file_id:
+                    try:
+                        tg_file = await context.bot.get_file(generated_file_id)
+                        local_filename = f"{generated_file_id}.jpg"
+                        local_photo_path = os.path.join(PHOTOS_DIR, local_filename)
+                        await tg_file.download_to_drive(local_photo_path)
+                        
+                        SESSIONS[key]["gallery_items"].append({
+                            "reference_image_file_id": generated_file_id, 
+                            "local_path": local_photo_path,               
+                            "prompt": channel_prompt, 
+                            "caption": caption,
+                            "channel_message_id": channel_message.message_id
+                        })
+                        
+                        save_sessions(SESSIONS)
+                    except Exception as e:
+                        logger.error(f"Ошибка сохранения фото на диск: {e}")
+                
+                context.user_data.clear()
+                await update.message.reply_text("✅ Успешно! Фото опубликовано в канал напрямую, а новый образ добавлен в бота.", reply_markup=admin_keyboard())
+                
+            except Exception as e:
+                logger.exception("Ошибка при публикации в канал")
+                await update.message.reply_text(f"❌ Ошибка публикации: {e}", reply_markup=admin_keyboard())
+                context.user_data.clear()
+            return
+
+        # Ручное добавление фото в сессию админом
+        elif context.user_data.get("edit_key") is not None:
+            edit_key = context.user_data.get("edit_key")
+            if not edit_key or edit_key not in SESSIONS:
+                context.user_data.clear()
+                await update.message.reply_text("❌ Ошибка: фотосессия не найдена.")
+                return
+
+            admin_file_id = update.message.photo[-1].file_id
+            try:
+                tg_file = await context.bot.get_file(admin_file_id)
+                local_filename = f"admin_{admin_file_id}.jpg"
+                local_photo_path = os.path.join(PHOTOS_DIR, local_filename)
+                await tg_file.download_to_drive(local_photo_path)
+                
+                if "gallery_items" not in SESSIONS[edit_key]:
+                    SESSIONS[edit_key]["gallery_items"] = []
+                
+                SESSIONS[edit_key]["gallery_items"].append({
+                    "local_path": local_photo_path,
+                    "reference_image_file_id": admin_file_id,
+                    "prompt": SESSIONS[edit_key].get("prompt", "Добавлено вручную через админку"),
+                    "caption": ""
+                })
+                
+                save_sessions(SESSIONS)
+                context.user_data.clear()
+                await update.message.reply_text("✅ Фотография успешно добавлена в фотосессию!")
+            except Exception as e:
+                logger.error(f"Ошибка при сохранении фото из админки: {e}")
+            return
+
     # ------------------------------------------
-    # 🛠️ АДМИН: РУЧНОЕ ДОБАВЛЕНИЕ ФОТО В СЕССИЮ
+    # 📸 КЛИЕНТСКАЯ ГЕНЕРАЦИЯ (НАЧИНАЕТСЯ ТУТ)
     # ------------------------------------------
-    if is_admin(update) and context.user_data.get("admin_state") is not None and context.user_data.get("edit_key") is not None:
-        edit_key = context.user_data.get("edit_key")
+    custom_prompt = context.user_data.get("custom_prompt") if context.user_data.get("custom_prompt_state") == "waiting_photo" else None
+    style = context.user_data.get("selected_style")
+    # ... далее идет ваш старый неизмененный код проверки балансов клиентов ...
+
         
         if not edit_key or edit_key not in SESSIONS:
             context.user_data.clear()
