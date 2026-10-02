@@ -1231,70 +1231,99 @@ telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, unknown
 # 📢 ЛОГИКА ПОСТА В КАНАЛ И КНОПОК АДМИНА
 # ==========================================
 async def handle_admin_channel_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Пошаговый опрос администратора для создания поста в канале"""
+    """Пошаговый опрос администратора для создания поста в канале (с жестким перехватом фото)"""
     if not is_admin(update):
         return
         
     state = context.user_data.get("admin_state")
     
-    # Шаг 3: Ловим промт для клиентов и запрашиваем описание для канала
-    if state == "waiting_channel_prompt":
+    # Шаг 3: Принимаем промт для клиентов и запрашиваем описание поста
+    if state == "waiting_channel_prompt" and update.message.text:
         context.user_data["channel_prompt"] = update.message.text
         context.user_data["admin_state"] = "waiting_channel_caption"
         await update.message.reply_text(
             "✍️ **Шаг 3 из 4**\n\n"
-            "Промт принят! Теперь отправь текст **ОПИСАНИЯ (CAPTION)**, который будет написан под самой фотографией в канале (можно использовать хэштеги):"
+            "Промт принят! Теперь отправь текст **ОПИСАНИЯ**, который будет написан под фотографией в канале:"
         )
         return
         
-    # Шаг 4: Ловим описание и запрашиваем готовую фотографию референса
-    if state == "waiting_channel_caption":
+    # Шаг 4: Принимаем описание и запрашиваем готовое фото для публикации
+    if state == "waiting_channel_caption" and update.message.text:
         context.user_data["channel_caption"] = update.message.text
         context.user_data["admin_state"] = "channel_photo"
         await update.message.reply_text(
             "📸 **Шаг 4 из 4**\n\n"
-            "Текст поста принят! Теперь отправь **ГОТОВУЮ ФОТОГРАФИЮ**.\n\n"
-            "Бот не будет её изменять, он сразу опубликует её в канал с вашей кнопкой «Сделать такое фото»!"
+            "Текст поста принят! Теперь отправь **ГОТОВУЮ ФОТОГРАФИЮ** для канала.\n\n"
+            "⚠️ Бот НЕ будет её изменять. Он просто опубликует её в канал с вашей кнопкой «Сделать такое фото»!"
         )
         return
 
-async def handle_admin_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик нажатий админских кнопок для канала"""
-    query = update.callback_query
-    data = query.data
-    
-    if data.startswith("admin:"):
-        if not is_admin(update):
-            await query.message.reply_text("⛔ Доступ ограничен.")
-            return
-            
-        action = data.split(":", 1)[1]
-        
-        if action == "channel":
+    # ФИНАЛ ШАГА 4: Жестко перехватываем готовую фотографию от админа
+    if state == "channel_photo" and update.message.photo:
+        key = context.user_data.get("channel_style")
+        caption = context.user_data.get("channel_caption", "")
+        channel_prompt = context.user_data.get("channel_prompt", "").strip()
+
+        if not key or key not in SESSIONS:
             context.user_data.clear()
-            buttons = [
-                [InlineKeyboardButton(s["title"], callback_data=f"admin_ch_style:{k}")]
-                for k, s in SESSIONS.items()
-            ]
-            await query.message.reply_text(
-                "📢 **Шаг 1 из 4**\n\nВыбери фотосессию, к которой будет относиться этот пост в канале 👇",
-                reply_markup=InlineKeyboardMarkup(buttons)
-            )
+            await update.message.reply_text("❌ Не удалось найти фотосессию.", reply_markup=admin_keyboard())
             return
 
-    if data.startswith("admin_ch_style:"):
-        if not is_admin(update):
-            return
-        key = data.split(":", 1)[1]
-        context.user_data["channel_style"] = key
-        context.user_data["admin_state"] = "waiting_channel_prompt"
-        
-        await query.message.reply_text(
-            f"Выбрана сессия: {SESSIONS[key]['title']}\n\n"
-            "✍️ **Шаг 2 из 4**\n"
-            "Отправь текстовым сообщением **ПРОМТ**, по которому бот будет генерировать фото клиентам, нажавшим кнопку в канале:"
-        )
+        try:
+            photo_file_id = update.message.photo[-1].file_id
+
+            if "gallery_items" not in SESSIONS[key]:
+                SESSIONS[key]["gallery_items"] = []
+            
+            current_index = len(SESSIONS[key]["gallery_items"])
+            start_parameter = f"{key}_{current_index}"
+            
+            # Создаем кнопку для канала со специальным старт-параметром
+            button = InlineKeyboardMarkup([
+                [InlineKeyboardButton("📸 СДЕЛАТЬ ТАКОЕ ФОТО", url=f"https://t.me{BOT_USERNAME}?start={start_parameter}")]
+            ])
+
+            await update.message.reply_text("📢 Публикую готовое фото в канал...")
+
+            # Отправляем фото напрямую в ваш канал БЕЗ генераций
+            channel_message = await context.bot.send_photo(
+                chat_id=CHANNEL_USERNAME,
+                photo=photo_file_id,
+                caption=caption,
+                reply_markup=button
+            )
+
+            generated_file_id = channel_message.photo[-1].file_id if channel_message.photo else None
+
+            if generated_file_id:
+                try:
+                    tg_file = await context.bot.get_file(generated_file_id)
+                    local_filename = f"{generated_file_id}.jpg"
+                    local_photo_path = os.path.join(PHOTOS_DIR, local_filename)
+                    await tg_file.download_to_drive(local_photo_path)
+                    
+                    # Сохраняем этот образ в базу бота. Когда клиент нажмет кнопку, бот возьмет этот prompt
+                    SESSIONS[key]["gallery_items"].append({
+                        "reference_image_file_id": generated_file_id, 
+                        "local_path": local_photo_path,               
+                        "prompt": channel_prompt, 
+                        "caption": caption,
+                        "channel_message_id": channel_message.message_id
+                    })
+                    
+                    save_sessions(SESSIONS)
+                except Exception as e:
+                    logger.error(f"Ошибка сохранения фото на диск: {e}")
+            
+            context.user_data.clear()
+            await update.message.reply_text("✅ Успешно! Фото опубликовано в канал напрямую, а новый образ привязан к кнопке.", reply_markup=admin_keyboard())
+            
+        except Exception as e:
+            logger.exception("Ошибка при публикации в канал")
+            await update.message.reply_text(f"❌ Ошибка публикации: {e}", reply_markup=admin_keyboard())
+            context.user_data.clear()
         return
+        
         
 
 # ==========================================
