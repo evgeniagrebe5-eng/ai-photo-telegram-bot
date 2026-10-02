@@ -1194,7 +1194,6 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     style = context.user_data.get("selected_style")
     # ... далее идет ваш старый неизмененный код проверки балансов клиентов ...
 
-        
         if not edit_key or edit_key not in SESSIONS:
             context.user_data.clear()
             await update.message.reply_text("❌ Ошибка: фотосессия не найдена.")
