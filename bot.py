@@ -1224,7 +1224,7 @@ async def custom_prompt_text_handler(update: Update, context: ContextTypes.DEFAU
         
 
 # Текстовые хендлеры по группам приоритетов
-telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, admin_text_handler), group=0)
+telegram_app.add_handler(MessageHandler(filters.TEXT | filters.PHOTO, handle_admin_channel_flow), group=0)
 telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, custom_prompt_text_handler), group=1)
 telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, unknown_text), group=2)
 # ==========================================
