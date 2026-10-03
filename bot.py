@@ -955,7 +955,7 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 logger.error(f"Ошибка при сохранении фото из админки: {e}")
             return
     # =======================================================
-    # 👑 ПЕРЕХВАТ МЕДИА ОТ АДМИНИСТРАТОРА (ФИКС КАНАЛА)
+    # 👑 ПЕРЕХВАТ МЕДИА ОТ АДМИНИСТРАТОРА (ФИКС КАНАЛА И ОТСТУПОВ)
     # =======================================================
     if is_admin(update) and context.user_data.get("admin_state") is not None:
         state = context.user_data.get("admin_state")
@@ -1024,7 +1024,7 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 context.user_data.clear()
             return
 
-        # Если админ просто вручную добавляет фото в галерею стиля
+        # Если админ вручную добавляет фото в галерею стиля
         elif context.user_data.get("edit_key") is not None:
             edit_key = context.user_data.get("edit_key")
             if not edit_key or edit_key not in SESSIONS:
@@ -1061,6 +1061,7 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # =======================================================
     custom_prompt = context.user_data.get("custom_prompt") if context.user_data.get("custom_prompt_state") == "waiting_photo" else None
     style = context.user_data.get("selected_style")
+ 
 
     # ------------------------------------------
     # 📸 КЛИЕНТСКАЯ ГЕНЕРАЦИЯ (НАЧИНАЕТСЯ ТУТ)
