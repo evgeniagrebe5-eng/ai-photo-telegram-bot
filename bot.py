@@ -1063,6 +1063,9 @@ async def unknown_text(update, context):
                 f"✨ Готово!\n\n"
                 f"{session['title']}\n\n"
                 "Хочешь ещё фото? Выбери другую фотосессию 👇"
+            ),
+            reply_markup=client_keyboard()
+        )
 
 
     # =======================================================
