@@ -5,6 +5,7 @@ import json
 import base64
 import asyncio
 import logging
+import re
 import sqlite3  # Добавили для постоянного хранения данных
 from contextlib import asynccontextmanager
 
@@ -304,6 +305,7 @@ def payment_keyboard():
 def admin_keyboard():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("➕ Добавить фотосессию", callback_data="admin:add")],
+        [InlineKeyboardButton("📸 Добавить фото в фотосессию", callback_data="admin:add_photo")],
         [InlineKeyboardButton("✏️ Изменить промт", callback_data="admin:edit")],
         [InlineKeyboardButton("🗑 Удалить фотосессию", callback_data="admin:delete")],
         [InlineKeyboardButton("📢 Пост в канал", callback_data="admin:channel")],
@@ -314,17 +316,44 @@ def admin_keyboard():
 def is_admin(update):
     return bool(update.effective_user and str(update.effective_user.id) == str(ADMIN_ID))
 
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
-    if context.args and context.args[0] in SESSIONS:
-        style = context.args[0]
-        context.user_data["selected_style"] = style
-        await update.message.reply_text(
-            f"✨ Выбрана фотосессия:\n\n{SESSIONS[style]['title']}\n\n"
-            "📸 Теперь просто отправь свою фотографию.\n"
-            "Промт писать не нужно — я всё сделаю сама ❤️"
-        )
-        return
+
+    if context.args:
+        start_arg = context.args[0]
+
+        # Поддержка ссылок вида /start autumn_0 для конкретного образа
+        if "_" in start_arg:
+            key, index_str = start_arg.rsplit("_", 1)
+            try:
+                index = int(index_str)
+            except ValueError:
+                index = None
+
+            if key in SESSIONS and index is not None:
+                gallery_items = SESSIONS[key].get("gallery_items", [])
+                if 0 <= index < len(gallery_items):
+                    context.user_data["selected_style"] = key
+                    context.user_data["selected_gallery_index"] = index
+                    await update.message.reply_text(
+                        f"📸 Выбран образ:\n\n{SESSIONS[key]['title']}\n\n"
+                        "Теперь просто отправь свою фотографию 📸"
+                    )
+                    return
+
+        # Обычная ссылка вида /start autumn
+        if start_arg in SESSIONS:
+            style = start_arg
+            context.user_data["selected_style"] = style
+            await update.message.reply_text(
+                f"✨ Выбрана фотосессия:\n\n{SESSIONS[style]['title']}\n\n"
+                "📸 Теперь просто отправь свою фотографию.\n"
+                "Промт писать не нужно — я всё сделаю сама ❤️"
+            )
+            return
+
     await update.message.reply_text(
         "✨ Добро пожаловать в AI Photo Gallery!\n\n"
         "Выбери фотосессию 👇\n\n"
@@ -333,56 +362,92 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=client_keyboard(),
     )
 
-async def admin_command(update, context):
+
+async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update):
         await update.message.reply_text("⛔ У вас нет доступа к админ-панели.")
         return
-    context.user_data.clear()
-    await update.message.reply_text("👑 Панель администратора\n\nВыбери действие:", reply_markup=admin_keyboard())
 
-async def callback_handler(update, context):
+    context.user_data.clear()
+    await update.message.reply_text(
+        "👑 Панель администратора\n\nВыбери действие:",
+        reply_markup=admin_keyboard(),
+    )
+
+
+async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    data = query.data
-    
+    data = query.data or ""
+
+    # -----------------------------
+    # Выбор фотосессии
+    # -----------------------------
     if data.startswith("style:"):
         key = data.split(":", 1)[1]
+
         if key not in SESSIONS:
             await query.message.reply_text("❌ Эта фотосессия больше недоступна.")
             return
 
         context.user_data["selected_style"] = key
+        context.user_data.pop("selected_gallery_index", None)
+
         gallery_items = SESSIONS[key].get("gallery_items", [])
 
         if gallery_items:
             await query.message.reply_text(
-                f"{SESSIONS[key]['title']}\n\n✨ Выбери понравившийся образ 👇"
+                f"{SESSIONS[key]['title']}\n\n"
+                "✨ Выбери понравившийся образ 👇"
             )
+
             for index, item in enumerate(gallery_items):
+                reference_id = item.get("reference_image_file_id")
+                local_path = item.get("local_path")
+
+                # Telegram file_id используем в первую очередь.
+                photo_source = reference_id
+                if not photo_source and local_path and os.path.exists(local_path):
+                    photo_source = local_path
+
+                if not photo_source:
+                    continue
+
                 caption = item.get("caption", "").strip()
                 text = SESSIONS[key]["title"]
                 if caption:
                     text += f"\n\n{caption}"
 
                 await query.message.reply_photo(
-                    photo=item["reference_image_file_id"],
+                    photo=photo_source,
                     caption=text,
                     reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("📸 СДЕЛАТЬ ТАКОЕ ФОТО", callback_data=f"gallery:{key}:{index}")]
-                    ])
+                        [
+                            InlineKeyboardButton(
+                                "📸 СДЕЛАТЬ ТАКОЕ ФОТО",
+                                callback_data=f"gallery:{key}:{index}",
+                            )
+                        ]
+                    ]),
                 )
             return
 
         await query.message.reply_text(
             f"{SESSIONS[key]['title']}\n\n"
-            "Отлично ❤️\nТеперь просто отправь свою фотографию 📸\n\nПромт писать не нужно."
+            "Отлично ❤️\n"
+            "Теперь просто отправь свою фотографию 📸\n\n"
+            "Промт писать не нужно."
         )
-        return 
+        return
 
+    # -----------------------------
+    # Выбор конкретного образа
+    # -----------------------------
     if data.startswith("gallery:"):
         parts = data.split(":", 2)
         if len(parts) != 3:
             return
+
         key = parts[1]
         try:
             index = int(parts[2])
@@ -395,66 +460,96 @@ async def callback_handler(update, context):
 
         gallery_items = SESSIONS[key].get("gallery_items", [])
         if index < 0 or index >= len(gallery_items):
-            await query.message.reply_text("❌ Этот образ больше недоступна.")
+            await query.message.reply_text("❌ Этот образ больше недоступен.")
             return
 
         context.user_data["selected_style"] = key
         context.user_data["selected_gallery_index"] = index
 
         await query.message.reply_text(
-            f"📸 Отличный выбор!\n\n{SESSIONS[key]['title']}\n\nТеперь отправь свою фотографию 📸"
+            f"📸 Отличный выбор!\n\n"
+            f"{SESSIONS[key]['title']}\n\n"
+            "Теперь отправь свою фотографию 📸"
         )
         return
- 
+
+    # -----------------------------
+    # Собственный промт
+    # -----------------------------
+    if data == "custom_prompt":
+        context.user_data.clear()
+        context.user_data["custom_prompt_state"] = "waiting_text"
+
+        await query.message.reply_text(
+            "✨ Напиши свой промт.\n\n"
+            "После этого я попрошу отправить фотографию 📸"
+        )
+        return
+
+    # -----------------------------
+    # Покупка пакета
+    # -----------------------------
+    packages = {
+        "1": ("1 фото", 500),
+        "3": ("3 фото", 1200),
+        "5": ("5 фото", 1800),
+        "10": ("10 фото", 3000),
+    }
+
     if data.startswith("buy:"):
         package = data.split(":", 1)[1]
-        packages = {
-            "1": ("1 фото", 500),
-            "3": ("3 фото", 1200),
-            "5": ("5 фото", 1800),
-            "10": ("10 фото", 3000),
-        }
         if package not in packages:
             return
+
         title, price = packages[package]
 
         await query.message.reply_text(
-            f"💳 Пакет: {title}\nСтоимость: {price} ₸\n\n"
+            f"💳 Пакет: {title}\n"
+            f"Стоимость: {price} ₸\n\n"
             "Нажми кнопку ниже, чтобы получить реквизиты для оплаты 👇",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("💳 ПОКАЗАТЬ РЕКВИЗИТЫ", callback_data=f"details:{package}")]
-            ])
+                [
+                    InlineKeyboardButton(
+                        "💳 ПОКАЗАТЬ РЕКВИЗИТЫ",
+                        callback_data=f"details:{package}",
+                    )
+                ]
+            ]),
         )
         return
 
     if data.startswith("details:"):
         package = data.split(":", 1)[1]
-        packages = {
-            "1": ("1 фото", 500),
-            "3": ("3 фото", 1200),
-            "5": ("5 фото", 1800),
-            "10": ("10 фото", 3000),
-        }
         if package not in packages:
             return
+
         title, price = packages[package]
 
         await query.message.reply_text(
-            f"💳 Оплата пакета: {title}\nСумма: {price} ₸\n\n"
-            "Переведи указанную сумму на Kaspi.\nНомер для перевода: +7 777 878 00 78\n\n"
+            f"💳 Оплата пакета: {title}\n"
+            f"Сумма: {price} ₸\n\n"
+            "Переведи указанную сумму на Kaspi.\n"
+            "Номер для перевода: +7 777 878 00 78\n\n"
             "После оплаты нажми кнопку ниже 👇",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("✅ Я оплатил(а)", callback_data=f"paid:{package}")]
-            ])
+                [
+                    InlineKeyboardButton(
+                        "✅ Я оплатил(а)",
+                        callback_data=f"paid:{package}",
+                    )
+                ]
+            ]),
         )
-        return      
+        return
 
     if data.startswith("paid:"):
         package = data.split(":", 1)[1]
-        # Завершаем оборванную кнопку подтверждения для админа, передаем ID пользователя и пакет
+        if package not in packages:
+            return
+
         user_id = query.from_user.id
         user_name = query.from_user.full_name
-        
+
         await context.bot.send_message(
             chat_id=ADMIN_ID,
             text=(
@@ -462,175 +557,342 @@ async def callback_handler(update, context):
                 f"Пакет: {package} фото\n"
                 f"Пользователь: {user_name}\n"
                 f"Telegram ID: {user_id}\n\n"
-                "Проверь оплату в Kaspi и нажми кнопку ниже."
+                "Проверь оплату в Kaspi и подтверди её."
             ),
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("✅ ПОДТВЕРДИТЬ ОПЛАТУ", callback_data=f"confirm_pay:{user_id}:{package}")]
-            ])
+                [
+                    InlineKeyboardButton(
+                        "✅ ПОДТВЕРДИТЬ ОПЛАТУ",
+                        callback_data=f"confirm_pay:{user_id}:{package}",
+                    )
+                ]
+            ]),
         )
-        await query.message.reply_text("⏳ Ваша заявка отправлена администратору. Ожидайте подтверждения.")
+
+        await query.message.reply_text(
+            "⏳ Ваша заявка отправлена администратору. "
+            "Ожидайте подтверждения."
+        )
         return
-    # ==========================================
-    # 👑 ОБРАБОТКА НАЖАТИЙ АДМИН-КНОПОК (ФИКС)
-    # ==========================================
+
+    # -----------------------------
+    # Подтверждение оплаты админом
+    # -----------------------------
+    if data.startswith("confirm_pay:"):
+        if not is_admin(update):
+            return
+
+        parts = data.split(":")
+        if len(parts) != 3:
+            return
+
+        target_user_id = parts[1]
+
+        try:
+            count = int(parts[2])
+        except ValueError:
+            return
+
+        global USERS
+        USERS = load_users()
+
+        if target_user_id not in USERS:
+            USERS[target_user_id] = {"paid_photos": 0, "name": ""}
+
+        # Важно: генерация читает именно paid_photos,
+        # поэтому здесь тоже записываем paid_photos, а не balance.
+        USERS[target_user_id]["paid_photos"] = (
+            int(USERS[target_user_id].get("paid_photos", 0) or 0) + count
+        )
+        save_users(USERS)
+
+        try:
+            await context.bot.send_message(
+                chat_id=int(target_user_id),
+                text=(
+                    f"✅ Оплата подтверждена!\n\n"
+                    f"Вам начислено {count} фото.\n"
+                    "Можете начинать генерацию 📸"
+                ),
+            )
+        except Exception:
+            logger.exception(
+                "Не удалось отправить сообщение пользователю об оплате"
+            )
+
+        await query.message.edit_text(
+            f"🟢 Оплата для пользователя {target_user_id} "
+            f"на {count} фото успешно подтверждена."
+        )
+        return
+
+    # -----------------------------
+    # Админка
+    # -----------------------------
     if data.startswith("admin:"):
         if not is_admin(update):
             await query.message.reply_text("⛔ Доступ ограничен.")
             return
-            
+
         action = data.split(":", 1)[1]
-        
-        # 1. Нажатие на кнопку "📢 Пост в канал"
+
         if action == "channel":
             context.user_data.clear()
-            # Показываем админу кнопки с выбором стиля для канала
             buttons = [
-                [InlineKeyboardButton(s["title"], callback_data=f"admin_ch_style:{k}")]
+                [
+                    InlineKeyboardButton(
+                        s["title"],
+                        callback_data=f"admin_ch_style:{k}",
+                    )
+                ]
                 for k, s in SESSIONS.items()
             ]
             await query.message.reply_text(
-                "📢 Выбери фотосессию, к которой будет относиться пост в канале 👇",
-                reply_markup=InlineKeyboardMarkup(buttons)
+                "📢 Выбери фотосессию, к которой будет относиться "
+                "пост в канале 👇",
+                reply_markup=InlineKeyboardMarkup(buttons),
             )
             return
 
-        # 2. Нажатие на кнопку "📸 Добавить фото в фотосессию"
-        elif action == "add_photo":
+        if action == "add":
+            context.user_data.clear()
+            await query.message.reply_text(
+                "✏️ Введи название новой фотосессии.\n\n"
+                "Пример: Осенняя прогулка"
+            )
+            context.user_data["admin_state"] = "waiting_new_session_title"
+            return
+
+        if action == "add_photo":
             context.user_data.clear()
             buttons = [
-                [InlineKeyboardButton(s["title"], callback_data=f"admin_add_photo_style:{k}")]
+                [
+                    InlineKeyboardButton(
+                        s["title"],
+                        callback_data=f"admin_add_photo_style:{k}",
+                    )
+                ]
                 for k, s in SESSIONS.items()
             ]
             await query.message.reply_text(
-                "📸 Выбери фотосессию, в галерею которой хочешь вручную добавить фото референса 👇",
-                reply_markup=InlineKeyboardMarkup(buttons)
+                "📸 Выбери фотосессию, в галерею которой хочешь "
+                "добавить фото:",
+                reply_markup=InlineKeyboardMarkup(buttons),
             )
             return
 
-        # 3. Нажатие на кнопку "🏠 Главное меню"
-        elif action == "home":
+        if action == "edit":
             context.user_data.clear()
-            await query.message.reply_text("Выбери фотосессию 👇", reply_markup=client_keyboard())
-            return
-
-    # Подхватываем выбор стиля для Поста в канал
-    if data.startswith("admin_ch_style:"):
-        key = data.split(":", 1)[1]
-        context.user_data["channel_style"] = key
-        context.user_data["admin_state"] = "waiting_channel_prompt"
-        await query.message.reply_text(
-            f"Выбрана сессия: {SESSIONS[key]['title']}\n\n"
-            "✍️ Введи и отправь промт (prompt) для генерации этого поста:"
-        )
-        return
-
-    # Подхватываем выбор стиля для Ручного добавления фото в фотосессию
-    if data.startswith("admin_add_photo_style:"):
-        key = data.split(":", 1)[1]
-        context.user_data["edit_key"] = key
-        context.user_data["admin_state"] = "waiting_admin_gallery_photo"
-        await query.message.reply_text(
-            f"Выбрана сессия: {SESSIONS[key]['title']}\n\n"
-            "📸 Теперь просто отправь боту фотографию. Она автоматически скачается на диск Render и добавится в этот стиль!"
-        )
-        return
-        
-    # Обработчик подтверждения оплаты админом
-    if data.startswith("confirm_pay:"):
-        if not is_admin(update):
-            return
-        parts = data.split(":")
-        target_user_id = parts[1]
-        count = int(parts[2])
-        
-        # Обновляем баланс в нашей базе USERS и пишем на диск Render
-        global USERS
-        USERS = load_users()
-        if target_user_id not in USERS:
-            USERS[target_user_id] = {"balance": 0, "name": ""}
-        
-        USERS[target_user_id]["balance"] = USERS[target_user_id].get("balance", 0) + count
-        save_users(USERS)
-        
-        # Уведомляем пользователя
-        try:
-            await context.bot.send_message(
-                chat_id=int(target_user_id),
-                text=f"✅ Оплата подтверждена! Вам начислено {count} фото. Можете начинать генерацию!"
+            buttons = [
+                [
+                    InlineKeyboardButton(
+                        s["title"],
+                        callback_data=f"admin_edit_style:{k}",
+                    )
+                ]
+                for k, s in SESSIONS.items()
+            ]
+            await query.message.reply_text(
+                "✏️ Выбери фотосессию для изменения промта:",
+                reply_markup=InlineKeyboardMarkup(buttons),
             )
-        except Exception:
-            logger.exception("Не удалось отправить сообщение пользователю об оплате")
-            
-        await query.message.edit_text(f"🟢 Оплата для пользователя {target_user_id} на {count} фото успешно подтверждена.")
-        return
-    
-        # ==========================================
-        # 🛠️ АДМИН: РУЧНОЕ ДОБАВЛЕНИЕ ФОТО В СЕССИЮ
-        # ==========================================
-        if is_admin(update) and context.user_data.get("admin_state") == "add_photo_photo":
-            edit_key = context.user_data.get("add_photo_key")
+            return
 
-            if not edit_key or edit_key not in SESSIONS:
-                context.user_data.clear()
-                await update.message.reply_text(
-                    "❌ Ошибка: фотосессия не найдена."
-                )
+        if action == "delete":
+            context.user_data.clear()
+            buttons = [
+                [
+                    InlineKeyboardButton(
+                        s["title"],
+                        callback_data=f"admin_delete_style:{k}",
+                    )
+                ]
+                for k, s in SESSIONS.items()
+            ]
+            await query.message.reply_text(
+                "🗑 Выбери фотосессию для удаления:",
+                reply_markup=InlineKeyboardMarkup(buttons),
+            )
+            return
+
+        if action == "list":
+            if not SESSIONS:
+                await query.message.reply_text("📋 Фотосессий пока нет.")
                 return
 
-            # Получаем file_id присланного фото
-            admin_file_id = update.message.photo[-1].file_id
+            text = "📋 Фотосессии:\n\n"
+            for key, session in SESSIONS.items():
+                count = len(session.get("gallery_items", []))
+                text += f"• {session['title']}  |  образов: {count}\n"
 
-            try:
-                # 1. Скачиваем физический файл на постоянный диск Render
-                tg_file = await context.bot.get_file(admin_file_id)
-                local_filename = f"admin_{admin_file_id}.jpg"
-                local_photo_path = os.path.join(PHOTOS_DIR, local_filename)
-                await tg_file.download_to_drive(local_photo_path)
+            await query.message.reply_text(text, reply_markup=admin_keyboard())
+            return
 
-                # 2. Инициализируем галерею, если её ещё нет
-                if "gallery_items" not in SESSIONS[edit_key]:
-                    SESSIONS[edit_key]["gallery_items"] = []
+        if action == "home":
+            context.user_data.clear()
+            await query.message.reply_text(
+                "Выбери фотосессию 👇",
+                reply_markup=client_keyboard(),
+            )
+            return
 
-                # 3. Сохраняем фото в фотосессию
-                SESSIONS[edit_key]["gallery_items"].append({
-                    "local_path": local_photo_path,
-                    "reference_image_file_id": admin_file_id,
-                    "prompt": SESSIONS[edit_key].get(
-                        "prompt",
-                        "Добавлено вручную через админку"
-                    ),
-                    "caption": ""
-                })
+    # -----------------------------
+    # Выбор стиля для поста в канал
+    # -----------------------------
+    if data.startswith("admin_ch_style:"):
+        if not is_admin(update):
+            return
 
-                # 4. Сохраняем обновлённую сессию
-                save_sessions(SESSIONS)
+        key = data.split(":", 1)[1]
+        if key not in SESSIONS:
+            await query.message.reply_text("❌ Фотосессия не найдена.")
+            return
 
-                logger.info(
-                    "MANUAL PHOTO SAVED: session=%s, path=%s, items=%s",
-                    edit_key,
-                    local_photo_path,
-                    len(SESSIONS[edit_key]["gallery_items"])
-                )
+        context.user_data["channel_style"] = key
+        context.user_data["admin_state"] = "waiting_channel_prompt"
 
-                context.user_data.clear()
+        await query.message.reply_text(
+            f"Выбрана сессия: {SESSIONS[key]['title']}\n\n"
+            "✍️ Введи промт для этого образа:"
+        )
+        return
 
-                await update.message.reply_text(
-                    "✅ Фотография успешно добавлена в фотосессию и сохранена на диск!"
-                )
+    # -----------------------------
+    # Ручное добавление фото в галерею
+    # -----------------------------
+    if data.startswith("admin_add_photo_style:"):
+        if not is_admin(update):
+            return
 
-            except Exception as e:
-                logger.exception(
-                    f"Ошибка при сохранении фото из админки: {e}"
-                )
-                await update.message.reply_text(
-                    "❌ Не удалось сохранить файл на диск. Проверьте логи."
-                )
+        key = data.split(":", 1)[1]
+        if key not in SESSIONS:
+            await query.message.reply_text("❌ Фотосессия не найдена.")
+            return
 
-            return        
-    # =========================
-    # 📸 КЛИЕНТСКАЯ ГЕНЕРАЦИЯ
-    # =========================
-    custom_prompt = context.user_data.get("custom_prompt") if context.user_data.get("custom_prompt_state") == "waiting_photo" else None
+        context.user_data["edit_key"] = key
+        context.user_data["admin_state"] = "waiting_admin_gallery_photo"
+
+        await query.message.reply_text(
+            f"Выбрана сессия: {SESSIONS[key]['title']}\n\n"
+            "📸 Теперь отправь фотографию. "
+            "Она сохранится на постоянный диск Render и "
+            "добавится в эту фотосессию."
+        )
+        return
+
+    # -----------------------------
+    # Изменение промта
+    # -----------------------------
+    if data.startswith("admin_edit_style:"):
+        if not is_admin(update):
+            return
+
+        key = data.split(":", 1)[1]
+        if key not in SESSIONS:
+            await query.message.reply_text("❌ Фотосессия не найдена.")
+            return
+
+        context.user_data["edit_key"] = key
+        context.user_data["admin_state"] = "waiting_edit_prompt"
+
+        await query.message.reply_text(
+            f"✏️ {SESSIONS[key]['title']}\n\n"
+            "Отправь новый промт:"
+        )
+        return
+
+    # -----------------------------
+    # Удаление фотосессии
+    # -----------------------------
+    if data.startswith("admin_delete_style:"):
+        if not is_admin(update):
+            return
+
+        key = data.split(":", 1)[1]
+        if key not in SESSIONS:
+            await query.message.reply_text("❌ Фотосессия не найдена.")
+            return
+
+        del SESSIONS[key]
+        save_sessions(SESSIONS)
+
+        await query.message.reply_text(
+            "🗑 Фотосессия удалена.",
+            reply_markup=admin_keyboard(),
+        )
+        return
+
+
+async def save_admin_gallery_photo(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    """Сохраняет фото, которое администратор добавляет в галерею."""
+    if not is_admin(update) or not update.message or not update.message.photo:
+        return False
+
+    if context.user_data.get("admin_state") != "waiting_admin_gallery_photo":
+        return False
+
+    edit_key = context.user_data.get("edit_key")
+
+    if not edit_key or edit_key not in SESSIONS:
+        context.user_data.clear()
+        await update.message.reply_text(
+            "❌ Ошибка: фотосессия не найдена.",
+            reply_markup=admin_keyboard(),
+        )
+        return True
+
+    try:
+        admin_file_id = update.message.photo[-1].file_id
+        tg_file = await context.bot.get_file(admin_file_id)
+
+        local_filename = f"admin_{admin_file_id}.jpg"
+        local_photo_path = os.path.join(PHOTOS_DIR, local_filename)
+
+        await tg_file.download_to_drive(local_photo_path)
+
+        SESSIONS[edit_key].setdefault("gallery_items", [])
+        SESSIONS[edit_key]["gallery_items"].append({
+            "local_path": local_photo_path,
+            "reference_image_file_id": admin_file_id,
+            "prompt": SESSIONS[edit_key].get(
+                "prompt",
+                "Добавлено вручную через админку",
+            ),
+            "caption": "",
+        })
+
+        save_sessions(SESSIONS)
+        context.user_data.clear()
+
+        await update.message.reply_text(
+            "✅ Фотография успешно добавлена в фотосессию "
+            "и сохранена на диск Render.",
+            reply_markup=admin_keyboard(),
+        )
+
+    except Exception:
+        logger.exception("Ошибка при сохранении фото из админки")
+        await update.message.reply_text(
+            "❌ Не удалось сохранить файл на диск. Проверьте логи.",
+            reply_markup=admin_keyboard(),
+        )
+
+    return True
+
+
+async def generate_client_photo(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    """Основной обработчик клиентской генерации."""
+    custom_prompt = (
+        context.user_data.get("custom_prompt")
+        if context.user_data.get("custom_prompt_state") == "waiting_photo"
+        else None
+    )
     style = context.user_data.get("selected_style")
 
     if custom_prompt:
@@ -639,28 +901,49 @@ async def callback_handler(update, context):
     elif not style or style not in SESSIONS:
         await update.message.reply_text(
             "❌ Сначала выбери фотосессию или нажми «СВОЙ ПРОМТ».",
-            reply_markup=client_keyboard()
+            reply_markup=client_keyboard(),
         )
         return
+
     else:
         session = SESSIONS[style]
 
     user_id_str = str(update.effective_user.id)
     user_record = USERS.get(user_id_str, {})
     paid_photos = int(user_record.get("paid_photos", 0) or 0)
-    has_free = user_id_str in FREE_USERS or bool(context.user_data.get("free_used"))
-    using_paid_credit = not is_admin(update) and paid_photos > 0
-    using_free_credit = not is_admin(update) and not using_paid_credit and not has_free
 
-    if not is_admin(update) and not using_paid_credit and not using_free_credit:
+    has_free = (
+        user_id_str in FREE_USERS
+        or bool(context.user_data.get("free_used"))
+    )
+
+    using_paid_credit = (
+        not is_admin(update)
+        and paid_photos > 0
+    )
+
+    using_free_credit = (
+        not is_admin(update)
+        and not using_paid_credit
+        and not has_free
+    )
+
+    if (
+        not is_admin(update)
+        and not using_paid_credit
+        and not using_free_credit
+    ):
         await update.message.reply_text(
-            "🎁 Бесплатная генерация уже использована.\n\nВыбери пакет фотографий 👇",
+            "🎁 Бесплатная генерация уже использована.\n\n"
+            "Выбери пакет фотографий 👇",
             reply_markup=payment_keyboard(),
         )
         return
 
     await update.message.reply_text(
-        "📸 Фото получила!\n\n✨ Начинаю обработку...\nЭто может занять некоторое время."
+        "📸 Фото получила!\n\n"
+        "✨ Начинаю обработку...\n"
+        "Это может занять некоторое время."
     )
 
     try:
@@ -670,118 +953,115 @@ async def callback_handler(update, context):
         image_file = io.BytesIO(bytes(photo_bytes))
         image_file.name = "photo.jpg"
 
-        # Определение выбранного образа
-        gallery_index = context.user_data.get("selected_gallery_index") if style else None
+        gallery_index = (
+            context.user_data.get("selected_gallery_index")
+            if style
+            else None
+        )
+
         gallery_items = session.get("gallery_items", [])
         selected_item = None
 
         if gallery_index is not None:
             if not (0 <= gallery_index < len(gallery_items)):
                 context.user_data.pop("selected_gallery_index", None)
-                await update.message.reply_text("❌ Этот образ больше недоступен. Выбери образ ещё раз.")
+                await update.message.reply_text(
+                    "❌ Этот образ больше недоступен. "
+                    "Выбери образ ещё раз."
+                )
                 return
+
             selected_item = gallery_items[gallery_index]
-            reference_file_id = selected_item.get("reference_image_file_id")
-            prompt_text = selected_item.get("prompt") or session.get("prompt", "")
+            reference_file_id = selected_item.get(
+                "reference_image_file_id"
+            )
+            prompt_text = (
+                selected_item.get("prompt")
+                or session.get("prompt", "")
+            )
         else:
-            reference_file_id = session.get("reference_image_file_id") if style else None
-            prompt_text = custom_prompt or session.get("prompt", "")
+            reference_file_id = (
+                session.get("reference_image_file_id")
+                if style
+                else None
+            )
+            prompt_text = (
+                custom_prompt
+                or session.get("prompt", "")
+            )
 
         reference_file = None
-        if reference_file_id:
-            reference_telegram_file = await context.bot.get_file(reference_file_id)
-            reference_bytes = await reference_telegram_file.download_as_bytearray()
-            reference_file = io.BytesIO(bytes(reference_bytes))
-            reference_file.name = "reference.jpg"
 
-        # Формирование финального промта для OpenAI
+        if reference_file_id:
+            try:
+                reference_telegram_file = await context.bot.get_file(
+                    reference_file_id
+                )
+                reference_bytes = (
+                    await reference_telegram_file.download_as_bytearray()
+                )
+                reference_file = io.BytesIO(bytes(reference_bytes))
+                reference_file.name = "reference.jpg"
+
+            except Exception:
+                logger.exception(
+                    "Не удалось загрузить reference_file_id"
+                )
+
+                local_path = (
+                    selected_item.get("local_path")
+                    if selected_item
+                    else None
+                )
+
+                if local_path and os.path.exists(local_path):
+                    with open(local_path, "rb") as lf:
+                        reference_file = io.BytesIO(lf.read())
+                    reference_file.name = "reference.jpg"
+
         if reference_file:
-            prompt = f"""
+            final_prompt = f"""
 Первое изображение — главный визуальный референс фотосессии.
 Второе изображение — человек клиента.
 Перенеси человека со второго изображения в сцену первого изображения.
 {prompt_text}
 Итог — реалистичная профессиональная фотография. Без пластиковой кожи.
 """
+
             def generate_image():
                 return client.images.edit(
                     model="gpt-image-2",
                     image=[reference_file, image_file],
-                    prompt=prompt,
+                    prompt=final_prompt,
                     size="1024x1536",
                 )
+
         else:
-            prompt = prompt_text
+            final_prompt = prompt_text
+
             def generate_image():
                 return client.images.edit(
                     model="gpt-image-2",
                     image=image_file,
-                    prompt=prompt_text,
+                    prompt=final_prompt,
                     size="1024x1536",
                 )
 
         result = await asyncio.to_thread(generate_image)
 
-        if not result.data or not getattr(result.data[0], "b64_json", None):
+        if (
+            not result.data
+            or not getattr(result.data[0], "b64_json", None)
+        ):
             raise RuntimeError("OpenAI returned no image")
 
-        generated_bytes = base64.b64decode(result.data[0].b64_json)
-        
-        # =======================================================
-        # ФИКС ХРАНЕНИЯ: ЖЕСТКОЕ СОХРАНЕНИЕ РЕЗУЛЬТАТА НА ДИСК RENDER
-        # =======================================================
-        output = io.BytesIO(generated_bytes)
-        output.name = f"user_{user_id_str}_res.png"
-        
-        # Отправляем фото пользователю в чат
-        sent_message = await update.message.reply_photo(
-            photo=output,
-            caption="✨ Твое готовое фото! Надеюсь, тебе понравится ❤️"
-        )
-        
-        # Получаем новый file_id сгенерированной фотографии в Telegram
-        tg_file_id = sent_message.photo[-1].file_id
-        
-        # Записываем физический файл на постоянный диск Render
-        local_filename = f"gen_{tg_file_id}.jpg"
-        local_photo_path = os.path.join(PHOTOS_DIR, local_filename)
-        
-        with open(local_photo_path, "wb") as f:
-            f.write(generated_bytes)
-
-        # Вызываем функцию сохранения истории (из Шага 2) в prompts.json
-        save_photo_to_history(
-            photo_id=sent_message.message_id,
-            session_key=style or "custom",
-            photo_path=local_photo_path,
-            tg_file_id=tg_file_id,
-            channel_msg_id=None,  # Если будет отправка в канал, обновим этот параметр
-            prompt=prompt,
-            user_id=update.effective_user.id
+        generated_bytes = base64.b64decode(
+            result.data[0].b64_json
         )
 
-        # Списание кредитов / обновление статуса бесплатного использования
-        if not is_admin(update):
-            if using_paid_credit:
-                USERS[user_id_str]["paid_photos"] = max(0, paid_photos - 1)
-                save_users(USERS)
-            elif using_free_credit:
-                FREE_USERS.add(user_id_str)
-                save_free_users(FREE_USERS)
-                context.user_data["free_used"] = True
-
-        context.user_data.pop("selected_gallery_index", None)
-        
-    except Exception as e:
-        logger.exception("Ошибка в процессе клиентской генерации")
-        await update.message.reply_text(f"❌ Произошла ошибка при генерации изображения: {e}")
-        # =======================================================
-        # ФИКС ХРАНЕНИЯ: ЖЕСТКОЕ СОХРАНЕНИЕ РЕЗУЛЬТАТА НА ДИСК RENDER
-        # =======================================================
         output = io.BytesIO(generated_bytes)
         output.name = "ai_photo.png"
 
-        # Отправляем фото пользователю в чат
         sent_message = await update.message.reply_photo(
             photo=output,
             caption=(
@@ -792,42 +1072,43 @@ async def callback_handler(update, context):
             reply_markup=client_keyboard(),
         )
 
-        # Получаем file_id сгенерированной фотографии
         tg_file_id = sent_message.photo[-1].file_id
-        
-        # 1. Железно записываем физический файл на постоянный диск Render
         local_filename = f"gen_{tg_file_id}.jpg"
-        local_photo_path = os.path.join(PHOTOS_DIR, local_filename)
-        
-        try:
-            with open(local_photo_path, "wb") as f:
-                f.write(generated_bytes)
+        local_photo_path = os.path.join(
+            PHOTOS_DIR,
+            local_filename,
+        )
 
-            # 2. Вызываем функцию сохранения истории (из Шага 2) в prompts.json
-            save_photo_to_history(
-                photo_id=sent_message.message_id,
-                session_key=style or "custom",
-                photo_path=local_photo_path,
-                tg_file_id=tg_file_id,
-                channel_msg_id=None,  # Если отправляли в канал, здесь будет id сообщения
-                prompt=prompt_text,
-                user_id=update.effective_user.id
-            )
-        except Exception as e:
-            logger.error(f"Ошибка при записи файла или промта на диск Render: {e}")
+        with open(local_photo_path, "wb") as f:
+            f.write(generated_bytes)
 
-        # Списание кредитов / обновление статуса бесплатного использования
+        save_photo_to_history(
+            photo_id=sent_message.message_id,
+            session_key=style or "custom",
+            photo_path=local_photo_path,
+            tg_file_id=tg_file_id,
+            channel_msg_id=None,
+            prompt=final_prompt,
+            user_id=update.effective_user.id,
+        )
+
         if not is_admin(update):
             if using_paid_credit:
-                if user_id_str in USERS:
-                    USERS[user_id_str]["paid_photos"] = max(0, paid_photos - 1)
-                    save_users(USERS)
+                USERS.setdefault(
+                    user_id_str,
+                    {"paid_photos": 0, "name": ""},
+                )
+                USERS[user_id_str]["paid_photos"] = max(
+                    0,
+                    paid_photos - 1,
+                )
+                save_users(USERS)
+
             elif using_free_credit:
                 FREE_USERS.add(user_id_str)
                 save_free_users(FREE_USERS)
                 context.user_data["free_used"] = True
 
-        # Сбрасываем выбор конкретного образа после использования
         context.user_data.pop("selected_gallery_index", None)
         context.user_data.pop("custom_prompt_state", None)
         context.user_data.pop("custom_prompt", None)
@@ -839,663 +1120,349 @@ async def callback_handler(update, context):
             "Попробуй отправить фото ещё раз."
         )
 
-# ==========================================
-# ХЕНДЛЕР СЛУЧАЙНОГО ТЕКСТА КЛИЕНТА
-# ==========================================
-async def unknown_text(update, context):
-    if is_admin(update) and context.user_data.get("admin_state"):
-        return
-    await update.message.reply_text("Выбери фотосессию 👇", reply_markup=client_keyboard())
 
-    # =======================================================
-    # 👑 ПЕРЕХВАТ МЕДИА ОТ АДМИНИСТРАТОРА (КАНАЛ И ГАЛЕРЕЯ)
-    # =======================================================
-    if is_admin(update) and context.user_data.get("admin_state") is not None:
-        state = context.user_data.get("admin_state")
-
-        # Шаг 4 админки: Админ прислал готовое фото для публикации в канал напрямую
-        if state == "channel_photo":
-            key = context.user_data.get("channel_style")
-            caption = context.user_data.get("channel_caption", "")
-            channel_prompt = context.user_data.get("channel_prompt", "").strip()
-
-            if not key or key not in SESSIONS:
-                context.user_data.clear()
-                await update.message.reply_text("❌ Не удалось найти фотосессию.", reply_markup=admin_keyboard())
-                return
-
-            try:
-                photo_file_id = update.message.photo[-1].file_id
-
-                if "gallery_items" not in SESSIONS[key]:
-                    SESSIONS[key]["gallery_items"] = []
-                
-                current_index = len(SESSIONS[key]["gallery_items"])
-                start_parameter = f"{key}_{current_index}"
-                
-                button = InlineKeyboardMarkup([
-                    [InlineKeyboardButton("📸 СДЕЛАТЬ ТАКОЕ ФОТО", url=f"https://t.me{BOT_USERNAME}?start={start_parameter}")]
-                ])
-
-                await update.message.reply_text("📢 Публикую готовое фото в канал...")
-
-                # Публикуем напрямую ваше фото в канал БЕЗ генераций OpenAI
-                channel_message = await context.bot.send_photo(
-                    chat_id=CHANNEL_USERNAME,
-                    photo=photo_file_id,
-                    caption=caption,
-                    reply_markup=button
-                )
-
-                generated_file_id = channel_message.photo[-1].file_id if channel_message.photo else None
-
-                if generated_file_id:
-                    try:
-                        tg_file = await context.bot.get_file(generated_file_id)
-                        local_filename = f"{generated_file_id}.jpg"
-                        local_photo_path = os.path.join(PHOTOS_DIR, local_filename)
-                        await tg_file.download_to_drive(local_photo_path)
-                        
-                        SESSIONS[key]["gallery_items"].append({
-                            "reference_image_file_id": generated_file_id, 
-                            "local_path": local_photo_path,               
-                            "prompt": channel_prompt, 
-                            "caption": caption,
-                            "channel_message_id": channel_message.message_id
-                        })
-                        
-                        save_sessions(SESSIONS)
-                    except Exception as e:
-                        logger.error(f"Ошибка сохранения фото на диск: {e}")
-                
-                context.user_data.clear()
-                await update.message.reply_text("✅ Успешно! Фото опубликовано в канал напрямую, а новый образ добавлен в бота.", reply_markup=admin_keyboard())
-                
-            except Exception as e:
-                logger.exception("Ошибка при публикации в канал")
-                await update.message.reply_text(f"❌ Ошибка публикации: {e}", reply_markup=admin_keyboard())
-                context.user_data.clear()
-            return
-
-        # Ручное добавление фото в галерею существующего стиля
-        elif context.user_data.get("edit_key") is not None:
-            edit_key = context.user_data.get("edit_key")
-            if edit_key not in SESSIONS:
-                context.user_data.clear()
-                await update.message.reply_text("❌ Ошибка: фотосессия не найдена.")
-                return
-
-            admin_file_id = update.message.photo[-1].file_id
-            try:
-                tg_file = await context.bot.get_file(admin_file_id)
-                local_filename = f"admin_{admin_file_id}.jpg"
-                local_photo_path = os.path.join(PHOTOS_DIR, local_filename)
-                await tg_file.download_to_drive(local_photo_path)
-                
-                if "gallery_items" not in SESSIONS[edit_key]:
-                    SESSIONS[edit_key]["gallery_items"] = []
-                
-                SESSIONS[edit_key]["gallery_items"].append({
-                    "local_path": local_photo_path,
-                    "reference_image_file_id": admin_file_id,
-                    "prompt": SESSIONS[edit_key].get("prompt", "Добавлено вручную через админку"),
-                    "caption": ""
-                })
-                
-                save_sessions(SESSIONS)
-                context.user_data.clear()
-                await update.message.reply_text("✅ Фотография успешно добавлена в фотосессию!")
-            except Exception as e:
-                logger.error(f"Ошибка при сохранении фото из админки: {e}")
-            return
-
-    # =======================================================
-    # 📸 КЛИЕНТСКАЯ ГЕНЕРАЦИЯ (ВАШ ОРИГИНАЛЬНЫЙ БЛОК ЛОГИКИ)
-    # =======================================================
-    custom_prompt = context.user_data.get("custom_prompt") if context.user_data.get("custom_prompt_state") == "waiting_photo" else None
-    style = context.user_data.get("selected_style")
-
-    if custom_prompt:
-        session = {"title": "✨ Свой промт", "prompt": custom_prompt}
-        style = None
-    elif not style or style not in SESSIONS:
-        await update.message.reply_text(
-            "❌ Сначала выбери фотосессию или нажми «СВОЙ ПРОМТ».",
-            reply_markup=client_keyboard()
-        )
-        return
-    else:
-        session = SESSIONS[style]
-
-    user_id_str = str(update.effective_user.id)
-    user_record = USERS.get(user_id_str, {})
-    paid_photos = int(user_record.get("paid_photos", 0) or 0)
-    has_free = user_id_str in FREE_USERS or bool(context.user_data.get("free_used"))
-    using_paid_credit = not is_admin(update) and paid_photos > 0
-    using_free_credit = not is_admin(update) and not using_paid_credit and not has_free
-
-    if not is_admin(update) and not using_paid_credit and not using_free_credit:
-        await update.message.reply_text(
-            "🎁 Бесплатная генерация уже использована.\n\nВыбери пакет фотографий 👇",
-            reply_markup=payment_keyboard(),
-        )
+async def photo_handler(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    """Единый обработчик всех фотографий."""
+    if not update.message or not update.message.photo:
         return
 
-    await update.message.reply_text(
-        "📸 Фото получила!\n\n✨ Начинаю обработку...\nЭто может занять некоторое время."
-    )
-
-    try:
-        telegram_file = await update.message.photo[-1].get_file()
-        photo_bytes = await telegram_file.download_as_bytearray()
-
-        image_file = io.BytesIO(bytes(photo_bytes))
-        image_file.name = "photo.jpg"
-
-        gallery_index = context.user_data.get("selected_gallery_index") if style else None
-        gallery_items = session.get("gallery_items", [])
-
-        if gallery_index is not None:
-            if not (0 <= gallery_index < len(gallery_items)):
-                context.user_data.pop("selected_gallery_index", None)
-                await update.message.reply_text("❌ Этот образ больше недоступен. Выбери образ ещё раз.")
-                return
-            selected_item = gallery_items[gallery_index]
-            reference_file_id = selected_item.get("reference_image_file_id")
-            prompt_text = selected_item.get("prompt") or session.get("prompt", "")
-        else:
-            reference_file_id = session.get("reference_image_file_id") if style else None
-            prompt_text = custom_prompt or session.get("prompt", "")
-
-        reference_file = None
-        if reference_file_id:
-            try:
-                reference_telegram_file = await context.bot.get_file(reference_file_id)
-                reference_bytes = await reference_telegram_file.download_as_bytearray()
-                reference_file = io.BytesIO(bytes(reference_bytes))
-                reference_file.name = "reference.jpg"
-            except Exception as e:
-                logger.error(f"Не удалось загрузить референс по file_id, пробуем открыть с постоянного диска: {e}")
-                if gallery_index is not None and "local_path" in gallery_items[gallery_index]:
-                    loc_path = gallery_items[gallery_index]["local_path"]
-                    if os.path.exists(loc_path):
-                        with open(loc_path, "rb") as lf:
-                            reference_file = io.BytesIO(lf.read())
-                            reference_file.name = "reference.jpg"
-
-        if reference_file:
-            prompt = f"""
-Первое изображение — главный визуальный референс фотосессии.
-Второе изображение — человек клиента.
-Перенеси человека со второго изображения в сцену первого изображения.
-{prompt_text}
-Итог — реалистичная профессиональная фотография. Без пластиковой кожи.
-"""
-            def generate_image():
-                return client.images.edit(
-                    model="gpt-image-2",
-                    image=[reference_file, image_file],
-                    prompt=prompt,
-                    size="1024x1536",
-                )
-        else:
-            def generate_image():
-                return client.images.edit(
-                    model="gpt-image-2",
-                    image=image_file,
-                    prompt=prompt_text,
-                    size="1024x1536",
-                )
-
-        result = await asyncio.to_thread(generate_image)
-
-        if not result.data or not getattr(result.data[0], "b64_json", None):
-            raise RuntimeError("OpenAI returned no image")
-
-        generated_bytes = base64.b64decode(result.data[0].b64_json)
-        
-        output = io.BytesIO(generated_bytes)
-        output.name = "ai_photo.png"
-
-        # Отправляем готовый кадр пользователю в чат с кнопками меню
-        sent_message = await update.message.reply_photo(
-            photo=output,
-            caption=(
-                f"✨ Готово!\n\n"
-                f"{session['title']}\n\n"
-                "Хочешь ещё фото? Выбери другую фотосессию 👇"
-            ),
-            reply_markup=client_keyboard()
-        )
-
-        # =======================================================
-        # ЖЕСТКАЯ ФИКСАЦИЯ РЕЗУЛЬТАТА НА ПОСТОЯННЫЙ ДИСК RENDER
-        # =======================================================
-        tg_file_id = sent_message.photo[-1].file_id
-        local_filename = f"gen_{tg_file_id}.jpg"
-        local_photo_path = os.path.join(PHOTOS_DIR, local_filename)
-        
-        try:
-            with open(local_photo_path, "wb") as f:
-                f.write(generated_bytes)
-
-            # Логируем связку промта и картинки в историю prompts.json на диске Render
-            save_photo_to_history(
-                photo_id=sent_message.message_id,
-                session_key=style or "custom",
-                photo_path=local_photo_path,
-                tg_file_id=tg_file_id,
-                channel_msg_id=None,
-                prompt=prompt_text,
-                user_id=update.effective_user.id
-            )
-        except Exception as e:
-            logger.error(f"Ошибка при записи файла на постоянный диск Render: {e}")
-
-        # Списание Kaspi-кредитов у пользователей
-        if not is_admin(update):
-            if using_paid_credit:
-                if user_id_str in USERS:
-                    USERS[user_id_str]["paid_photos"] = max(0, paid_photos - 1)
-                    save_users(USERS)
-            elif using_free_credit:
-                FREE_USERS.add(user_id_str)
-                save_free_users(FREE_USERS)
-                context.user_data["free_used"] = True
-
-        # Сбрасываем временные состояния пользователя
-        context.user_data.pop("selected_gallery_index", None)
-        context.user_data.pop("custom_prompt_state", None)
-        context.user_data.pop("custom_prompt", None)
-
-    except Exception:
-        logger.exception("Image generation error")
-        await update.message.reply_text(
-            "😔 Не удалось создать фотографию.\n\nПопробуй отправить фото ещё раз."
-        )
-    return
-
-    # =======================================================
-    # 📸 КЛИЕНТСКАЯ ГЕНЕРАЦИЯ (СЮДА ПОПАДАЮТ ТОЛЬКО ОБЫЧНЫЕ ПОЛЬЗОВАТЕЛИ)
-    # =======================================================
-    custom_prompt = context.user_data.get("custom_prompt") if context.user_data.get("custom_prompt_state") == "waiting_photo" else None
-    style = context.user_data.get("selected_style")
-    # ... далее идет ваш старый неизмененный код проверки балансов клиентов ...
-
-    # =======================================================
-    # 👑 ПЕРЕХВАТ МЕДИА: РУЧНОЕ ДОБАВЛЕНИЕ (ОТСТУПЫ ВЫРОВНЕНЫ)
-    # =======================================================
-    if is_admin(update) and context.user_data.get("edit_key") is not None:
-        edit_key = context.user_data.get("edit_key")
-        if not edit_key or edit_key not in SESSIONS:
-            context.user_data.clear()
-            await update.message.reply_text("❌ Ошибка: фотосессия не найдена.")
-            return
-
-        admin_file_id = update.message.photo[-1].file_id
-        
-        try:
-            tg_file = await context.bot.get_file(admin_file_id)
-            local_filename = f"admin_{admin_file_id}.jpg"
-            local_photo_path = os.path.join(PHOTOS_DIR, local_filename)
-            await tg_file.download_to_drive(local_photo_path)
-            
-            if "gallery_items" not in SESSIONS[edit_key]:
-                SESSIONS[edit_key]["gallery_items"] = []
-            
-            SESSIONS[edit_key]["gallery_items"].append({
-                "local_path": local_photo_path,
-                "reference_image_file_id": admin_file_id,
-                "prompt": SESSIONS[edit_key].get("prompt", "Добавлено вручную через админку"),
-                "caption": ""
-            })
-            
-            save_sessions(SESSIONS)
-            context.user_data.clear()
-            await update.message.reply_text("✅ Фотография успешно добавлена в фотосессию и сохранена на диск!")
-            
-        except Exception as e:
-            logger.error(f"Ошибка при сохранении фото из админки: {e}")
-            await update.message.reply_text("❌ Не удалось сохранить файл на диск. Проверьте логи.")
+    # 1. Админ добавляет референс в фотосессию.
+    if await save_admin_gallery_photo(update, context):
         return
 
-
-    # ------------------------------------------
-    # 📸 КЛИЕНТСКАЯ ГЕНЕРАЦИЯ
-    # ------------------------------------------
-    custom_prompt = context.user_data.get("custom_prompt") if context.user_data.get("custom_prompt_state") == "waiting_photo" else None
-    style = context.user_data.get("selected_style")
-
-    if custom_prompt:
-        session = {"title": "✨ Свой промт", "prompt": custom_prompt}
-        style = None
-    elif not style or style not in SESSIONS:
-        await update.message.reply_text(
-            "❌ Сначала выбери фотосессию или нажми «СВОЙ ПРОМТ».",
-            reply_markup=client_keyboard()
-        )
-        return
-    else:
-        session = SESSIONS[style]
-
-    user_id_str = str(update.effective_user.id)
-    user_record = USERS.get(user_id_str, {})
-    paid_photos = int(user_record.get("paid_photos", 0) or 0)
-    has_free = user_id_str in FREE_USERS or bool(context.user_data.get("free_used"))
-    using_paid_credit = not is_admin(update) and paid_photos > 0
-    using_free_credit = not is_admin(update) and not using_paid_credit and not has_free
-
-    if not is_admin(update) and not using_paid_credit and not using_free_credit:
-        await update.message.reply_text(
-            "🎁 Бесплатная генерация уже использована.\n\nВыбери пакет фотографий 👇",
-            reply_markup=payment_keyboard(),
-        )
-        return
-
-    await update.message.reply_text(
-        "📸 Фото получила!\n\n✨ Начинаю обработку...\nЭто может занять некоторое время."
-    )
-
-    try:
-        telegram_file = await update.message.photo[-1].get_file()
-        photo_bytes = await telegram_file.download_as_bytearray()
-
-        image_file = io.BytesIO(bytes(photo_bytes))
-        image_file.name = "photo.jpg"
-
-        gallery_index = context.user_data.get("selected_gallery_index") if style else None
-        gallery_items = session.get("gallery_items", [])
-
-        if gallery_index is not None:
-            if not (0 <= gallery_index < len(gallery_items)):
-                context.user_data.pop("selected_gallery_index", None)
-                await update.message.reply_text("❌ Этот образ больше недоступен. Выбери образ ещё раз.")
-                return
-            selected_item = gallery_items[gallery_index]
-            reference_file_id = selected_item.get("reference_image_file_id")
-            prompt_text = selected_item.get("prompt") or session.get("prompt", "")
-        else:
-            reference_file_id = session.get("reference_image_file_id") if style else None
-            prompt_text = custom_prompt or session.get("prompt", "")
-
-        reference_file = None
-        if reference_file_id:
-            try:
-                reference_telegram_file = await context.bot.get_file(reference_file_id)
-                reference_bytes = await reference_telegram_file.download_as_bytearray()
-                reference_file = io.BytesIO(bytes(reference_bytes))
-                reference_file.name = "reference.jpg"
-            except Exception as e:
-                logger.error(f"Не удалось загрузить reference_file_id, пробуем локальный путь: {e}")
-                # Подстраховка: если telegram сбросил id, ищем локальный файл на диске
-                if gallery_index is not None and "local_path" in gallery_items[gallery_index]:
-                    loc_path = gallery_items[gallery_index]["local_path"]
-                    if os.path.exists(loc_path):
-                        with open(loc_path, "rb") as lf:
-                            reference_file = io.BytesIO(lf.read())
-                            reference_file.name = "reference.jpg"
-
-        if reference_file:
-            prompt = f"""
-Первое изображение — главный визуальный референс фотосессии.
-Второе изображение — человек клиента.
-Перенеси человека со второго изображения в сцену первого изображения.
-{prompt_text}
-Итог — реалистичная профессиональная фотография. Без пластиковой кожи.
-"""
-            def generate_image():
-                return client.images.edit(
-                    model="gpt-image-2",
-                    image=[reference_file, image_file],
-                    prompt=prompt,
-                    size="1024x1536",
-                )
-        else:
-            def generate_image():
-                return client.images.edit(
-                    model="gpt-image-2",
-                    image=image_file,
-                    prompt=prompt_text,
-                    size="1024x1536",
-                )
-
-        result = await asyncio.to_thread(generate_image)
-
-        if not result.data or not getattr(result.data[0], "b64_json", None):
-            raise RuntimeError("OpenAI returned no image")
-
-        generated_bytes = base64.b64decode(result.data[0].b64_json)
-        
-        output = io.BytesIO(generated_bytes)
-        output.name = "ai_photo.png"
-
-        sent_message = await update.message.reply_photo(
-            photo=output,
-            caption=(
-                f"✨ Готово!\n\n"
-                f"{session['title']}\n\n"
-                "Хочешь ещё фото? Выбери другую фотосессию 👇"
-            ),
-            reply_markup=client_keyboard(),
-        )
-
-        # =======================================================
-        # СОХРАНЕНИЕ: ЗАПИСЬ НА ФИЗИЧЕСКИЙ ДИСК RENDER
-        # =======================================================
-        tg_file_id = sent_message.photo[-1].file_id
-        local_filename = f"gen_{tg_file_id}.jpg"
-        local_photo_path = os.path.join(PHOTOS_DIR, local_filename)
-        
-        with open(local_photo_path, "wb") as f:
-            f.write(generated_bytes)
-
-        # Пишем в prompts.json историю связки фото и промта
-        save_photo_to_history(
-            photo_id=sent_message.message_id,
-            session_key=style or "custom",
-            photo_path=local_photo_path,
-            tg_file_id=tg_file_id,
-            channel_msg_id=None,
-            prompt=prompt_text,
-            user_id=update.effective_user.id
-        )
-
-        if not is_admin(update):
-            if using_paid_credit:
-                if user_id_str in USERS:
-                    USERS[user_id_str]["paid_photos"] = max(0, paid_photos - 1)
-                    save_users(USERS)
-            elif using_free_credit:
-                FREE_USERS.add(user_id_str)
-                save_free_users(FREE_USERS)
-                context.user_data["free_used"] = True
-
-        context.user_data.pop("selected_gallery_index", None)
-        context.user_data.pop("custom_prompt_state", None)
-        context.user_data.pop("custom_prompt", None)
-
-    except Exception:
-        logger.exception("Image generation error")
-        await update.message.reply_text(
-            "😔 Не удалось создать фотографию.\n\nПопробуй отправить фото ещё раз."
-            )
-    
-# ==========================================
-# РЕГИСТРАЦИЯ ВСЕХ ХЕНДЛЕРОВ ТЕЛЕГРАМ
-# ==========================================
-telegram_app.add_handler(CommandHandler("start", start))
-telegram_app.add_handler(CommandHandler("admin", admin_command))
-telegram_app.add_handler(CallbackQueryHandler(callback_handler))
-
-# Главный хендлер для фото (внутри него крутится вся магия photo_handler)
-telegram_app.add_handler(
-    MessageHandler(filters.PHOTO, photo_handler)
-)
-# ==========================================
-# 👑 ОБРАБОТЧИКИ ТЕКСТОВЫХ СООБЩЕНИЙ (ФИКС)
-# ==========================================
-async def admin_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработка текстовых команд от администратора в панели управления"""
-    if not is_admin(update):
-        return
-        
-    state = context.user_data.get("admin_state")
-    
-    if state == "waiting_channel_prompt":
-        context.user_data["channel_prompt"] = update.message.text
-        context.user_data["admin_state"] = "waiting_channel_caption"
-        await update.message.reply_text("📢 Теперь отправь текст (описание) для поста в канале:")
-        return
-        
-    if state == "waiting_channel_caption":
-        context.user_data["channel_caption"] = update.message.text
-        context.user_data["admin_state"] = "channel_photo"
-        await update.message.reply_text("📸 Отлично! Теперь отправь исходную фотографию (референс) для генерации поста:")
-        return
-
-
-async def custom_prompt_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработка ввода собственного промта пользователем"""
-    if context.user_data.get("custom_prompt_state") == "waiting_text":
-        context.user_data["custom_prompt"] = update.message.text
-        context.user_data["custom_prompt_state"] = "waiting_photo"
-        await update.message.reply_text(
-            "✨ Твой промт успешно принят!\n\n"
-            "📸 Теперь отправь свою фотографию, которую нужно обработать:"
-        )
-        
-
-# Текстовые хендлеры по группам приоритетов
-telegram_app.add_handler(MessageHandler(filters.TEXT | filters.PHOTO, handle_admin_channel_flow), group=0)
-telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, custom_prompt_text_handler), group=1)
-telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, unknown_text), group=2)
-# ==========================================
-# 📢 ЛОГИКА ПОСТА В КАНАЛ И КНОПОК АДМИНА
-# ==========================================
-async def handle_admin_channel_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Пошаговый опрос администратора для создания поста в канале (с жестким перехватом фото)"""
-    if not is_admin(update):
-        return
-        
-    state = context.user_data.get("admin_state")
-    
-    # Шаг 3: Принимаем промт для клиентов и запрашиваем описание поста
-    if state == "waiting_channel_prompt" and update.message.text:
-        context.user_data["channel_prompt"] = update.message.text
-        context.user_data["admin_state"] = "waiting_channel_caption"
-        await update.message.reply_text(
-            "✍️ **Шаг 3 из 4**\n\n"
-            "Промт принят! Теперь отправь текст **ОПИСАНИЯ**, который будет написан под фотографией в канале:"
-        )
-        return
-        
-    # Шаг 4: Принимаем описание и запрашиваем готовое фото для публикации
-    if state == "waiting_channel_caption" and update.message.text:
-        context.user_data["channel_caption"] = update.message.text
-        context.user_data["admin_state"] = "channel_photo"
-        await update.message.reply_text(
-            "📸 **Шаг 4 из 4**\n\n"
-            "Текст поста принят! Теперь отправь **ГОТОВУЮ ФОТОГРАФИЮ** для канала.\n\n"
-            "⚠️ Бот НЕ будет её изменять. Он просто опубликует её в канал с вашей кнопкой «Сделать такое фото»!"
-        )
-        return
-
-    # ФИНАЛ ШАГА 4: Жестко перехватываем готовую фотографию от админа
-    if state == "channel_photo" and update.message.photo:
+    # 2. Админ публикует готовое фото в канал.
+    if (
+        is_admin(update)
+        and context.user_data.get("admin_state") == "channel_photo"
+    ):
         key = context.user_data.get("channel_style")
         caption = context.user_data.get("channel_caption", "")
-        channel_prompt = context.user_data.get("channel_prompt", "").strip()
+        channel_prompt = (
+            context.user_data.get("channel_prompt", "").strip()
+        )
 
         if not key or key not in SESSIONS:
             context.user_data.clear()
-            await update.message.reply_text("❌ Не удалось найти фотосессию.", reply_markup=admin_keyboard())
+            await update.message.reply_text(
+                "❌ Не удалось найти фотосессию.",
+                reply_markup=admin_keyboard(),
+            )
             return
 
         try:
             photo_file_id = update.message.photo[-1].file_id
 
-            if "gallery_items" not in SESSIONS[key]:
-                SESSIONS[key]["gallery_items"] = []
-            
-            current_index = len(SESSIONS[key]["gallery_items"])
+            SESSIONS[key].setdefault("gallery_items", [])
+            current_index = len(
+                SESSIONS[key]["gallery_items"]
+            )
+
+            # Исправлен URL: раньше получалось https://tmeaiphoto...
             start_parameter = f"{key}_{current_index}"
-            
-            # Создаем кнопку для канала со специальным старт-параметром
+            bot_link = (
+                f"https://t.me/{BOT_USERNAME}"
+                f"?start={start_parameter}"
+            )
+
             button = InlineKeyboardMarkup([
-                [InlineKeyboardButton("📸 СДЕЛАТЬ ТАКОЕ ФОТО", url=f"https://t.me{BOT_USERNAME}?start={start_parameter}")]
+                [
+                    InlineKeyboardButton(
+                        "📸 СДЕЛАТЬ ТАКОЕ ФОТО",
+                        url=bot_link,
+                    )
+                ]
             ])
 
-            await update.message.reply_text("📢 Публикую готовое фото в канал...")
+            await update.message.reply_text(
+                "📢 Публикую готовое фото в канал..."
+            )
 
-            # Отправляем фото напрямую в ваш канал БЕЗ генераций
             channel_message = await context.bot.send_photo(
                 chat_id=CHANNEL_USERNAME,
                 photo=photo_file_id,
                 caption=caption,
-                reply_markup=button
+                reply_markup=button,
             )
 
-            generated_file_id = channel_message.photo[-1].file_id if channel_message.photo else None
+            generated_file_id = (
+                channel_message.photo[-1].file_id
+                if channel_message.photo
+                else None
+            )
 
             if generated_file_id:
-                try:
-                    tg_file = await context.bot.get_file(generated_file_id)
-                    local_filename = f"{generated_file_id}.jpg"
-                    local_photo_path = os.path.join(PHOTOS_DIR, local_filename)
-                    await tg_file.download_to_drive(local_photo_path)
-                    
-                    # Сохраняем этот образ в базу бота. Когда клиент нажмет кнопку, бот возьмет этот prompt
-                    SESSIONS[key]["gallery_items"].append({
-                        "reference_image_file_id": generated_file_id, 
-                        "local_path": local_photo_path,               
-                        "prompt": channel_prompt, 
-                        "caption": caption,
-                        "channel_message_id": channel_message.message_id
-                    })
-                    
-                    save_sessions(SESSIONS)
-                except Exception as e:
-                    logger.error(f"Ошибка сохранения фото на диск: {e}")
-            
+                tg_file = await context.bot.get_file(
+                    generated_file_id
+                )
+
+                local_filename = f"{generated_file_id}.jpg"
+                local_photo_path = os.path.join(
+                    PHOTOS_DIR,
+                    local_filename,
+                )
+
+                await tg_file.download_to_drive(
+                    local_photo_path
+                )
+
+                SESSIONS[key]["gallery_items"].append({
+                    "reference_image_file_id": generated_file_id,
+                    "local_path": local_photo_path,
+                    "prompt": channel_prompt,
+                    "caption": caption,
+                    "channel_message_id": (
+                        channel_message.message_id
+                    ),
+                })
+
+                save_sessions(SESSIONS)
+
             context.user_data.clear()
-            await update.message.reply_text("✅ Успешно! Фото опубликовано в канал напрямую, а новый образ привязан к кнопке.", reply_markup=admin_keyboard())
-            
+
+            await update.message.reply_text(
+                "✅ Успешно! Фото опубликовано в канал, "
+                "а новый образ привязан к кнопке.",
+                reply_markup=admin_keyboard(),
+            )
+
         except Exception as e:
-            logger.exception("Ошибка при публикации в канал")
-            await update.message.reply_text(f"❌ Ошибка публикации: {e}", reply_markup=admin_keyboard())
+            logger.exception(
+                "Ошибка при публикации в канал"
+            )
             context.user_data.clear()
+            await update.message.reply_text(
+                f"❌ Ошибка публикации: {e}",
+                reply_markup=admin_keyboard(),
+            )
+
         return
-        
-        
+
+    # 3. Обычная клиентская генерация.
+    await generate_client_photo(update, context)
+
+
+async def admin_text_handler(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    """Обработка текстовых состояний администратора."""
+    if not is_admin(update) or not update.message:
+        return
+
+    state = context.user_data.get("admin_state")
+    text_value = (update.message.text or "").strip()
+
+    if not text_value:
+        return
+
+    if state == "waiting_new_session_title":
+        # Создаем уникальный ключ из названия.
+        base_key = re.sub(
+            r"[^a-z0-9а-яё]+",
+            "_",
+            text_value.lower(),
+        ).strip("_")
+
+        if not base_key:
+            base_key = "session"
+
+        key = base_key
+        counter = 2
+        while key in SESSIONS:
+            key = f"{base_key}_{counter}"
+            counter += 1
+
+        SESSIONS[key] = {
+            "title": text_value,
+            "prompt": "",
+            "gallery_items": [],
+        }
+
+        context.user_data["edit_key"] = key
+        context.user_data["admin_state"] = "waiting_new_session_prompt"
+
+        await update.message.reply_text(
+            "✍️ Теперь отправь промт для этой фотосессии:"
+        )
+        return
+
+    if state == "waiting_new_session_prompt":
+        key = context.user_data.get("edit_key")
+
+        if not key or key not in SESSIONS:
+            context.user_data.clear()
+            await update.message.reply_text(
+                "❌ Не удалось создать фотосессию.",
+                reply_markup=admin_keyboard(),
+            )
+            return
+
+        SESSIONS[key]["prompt"] = text_value
+        save_sessions(SESSIONS)
+        context.user_data.clear()
+
+        await update.message.reply_text(
+            "✅ Фотосессия создана.",
+            reply_markup=admin_keyboard(),
+        )
+        return
+
+    if state == "waiting_edit_prompt":
+        key = context.user_data.get("edit_key")
+
+        if not key or key not in SESSIONS:
+            context.user_data.clear()
+            await update.message.reply_text(
+                "❌ Фотосессия не найдена.",
+                reply_markup=admin_keyboard(),
+            )
+            return
+
+        SESSIONS[key]["prompt"] = text_value
+        save_sessions(SESSIONS)
+        context.user_data.clear()
+
+        await update.message.reply_text(
+            "✅ Промт фотосессии обновлён.",
+            reply_markup=admin_keyboard(),
+        )
+        return
+
+    if state == "waiting_channel_prompt":
+        context.user_data["channel_prompt"] = text_value
+        context.user_data["admin_state"] = "waiting_channel_caption"
+
+        await update.message.reply_text(
+            "📢 Теперь отправь текст описания для поста в канале:"
+        )
+        return
+
+    if state == "waiting_channel_caption":
+        context.user_data["channel_caption"] = text_value
+        context.user_data["admin_state"] = "channel_photo"
+
+        await update.message.reply_text(
+            "📸 Теперь отправь готовую фотографию для публикации.\n\n"
+            "Бот не будет её изменять."
+        )
+        return
+
+
+async def custom_prompt_text_handler(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    """Принимает собственный промт клиента."""
+    if not update.message or not update.message.text:
+        return
+
+    if context.user_data.get("custom_prompt_state") != "waiting_text":
+        return
+
+    context.user_data["custom_prompt"] = update.message.text.strip()
+    context.user_data["custom_prompt_state"] = "waiting_photo"
+
+    await update.message.reply_text(
+        "✨ Твой промт успешно принят!\n\n"
+        "📸 Теперь отправь свою фотографию, которую нужно обработать."
+    )
+
+
+async def unknown_text(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    if is_admin(update) and context.user_data.get("admin_state"):
+        return
+
+    await update.message.reply_text(
+        "Выбери фотосессию 👇",
+        reply_markup=client_keyboard(),
+    )
+
 
 # ==========================================
-# ЗАПУСК ВЕБХУКА И FASTAPI (LIFESPAN)
+# РЕГИСТРАЦИЯ ХЕНДЛЕРОВ TELEGRAM
+# ==========================================
+telegram_app.add_handler(CommandHandler("start", start))
+telegram_app.add_handler(CommandHandler("admin", admin_command))
+telegram_app.add_handler(CallbackQueryHandler(callback_handler))
+
+# Админские текстовые состояния должны обрабатываться раньше обычного текста.
+telegram_app.add_handler(
+    MessageHandler(
+        filters.TEXT & ~filters.COMMAND,
+        admin_text_handler,
+    ),
+    group=0,
+)
+
+# Свой промт клиента.
+telegram_app.add_handler(
+    MessageHandler(
+        filters.TEXT & ~filters.COMMAND,
+        custom_prompt_text_handler,
+    ),
+    group=1,
+)
+
+# Фото: админская галерея / пост в канал / клиентская генерация.
+telegram_app.add_handler(
+    MessageHandler(filters.PHOTO, photo_handler),
+    group=0,
+)
+
+# Обычный текст клиента.
+telegram_app.add_handler(
+    MessageHandler(
+        filters.TEXT & ~filters.COMMAND,
+        unknown_text,
+    ),
+    group=2,
+)
+
+
+# ==========================================
+# ЗАПУСК ВЕБХУКА И FASTAPI
 # ==========================================
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting Telegram application...")
+
     await telegram_app.initialize()
     await telegram_app.start()
-    
-    # Автоматическое определение URL на Render
-    render_url = os.environ.get("RENDER_EXTERNAL_URL") or "https://ai-photo-telegram-bot.onrender.com"
+
+    render_url = (
+        os.environ.get("RENDER_EXTERNAL_URL")
+        or "https://ai-photo-telegram-bot.onrender.com"
+    )
     webhook_url = render_url.rstrip("/") + "/telegram"
-    
+
     await telegram_app.bot.set_webhook(webhook_url)
+
     logger.info("Webhook set: %s", webhook_url)
     logger.info("Telegram application started")
+
     yield
+
     logger.info("Stopping Telegram application...")
-    
     await telegram_app.stop()
     await telegram_app.shutdown()
+
 
 app = FastAPI(lifespan=lifespan)
 
 
 @app.get("/")
 async def root():
-    return {"status": "ok", "bot": "AI Photo Gallery", "storage": "Render Persistent Disk Connected"}
+    return {
+        "status": "ok",
+        "bot": "AI Photo Gallery",
+        "storage": "Render Persistent Disk Connected",
+    }
 
 
 @app.post("/telegram")
@@ -1510,4 +1477,8 @@ if __name__ == "__main__":
     import uvicorn
 
     port = int(os.environ.get("PORT", 10000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=port,
+    )
