@@ -1072,13 +1072,17 @@ async def unknown_text(update, context):
     # =======================================================
     # 📸 КЛИЕНТСКАЯ ГЕНЕРАЦИЯ (СЮДА ПОПАДАЮТ ТОЛЬКО ОБЫЧНЫЕ ПОЛЬЗОВАТЕЛИ)
     # =======================================================
-    custom_prompt = context.user_data.get("custom_prompt") if context.user_data.get("custom_prompt_state") == "waiting_photo" else None
-    style = context.user_data.get("selected_style")
- 
+        except Exception:
+        logger.exception("Image generation error")
+        await update.message.reply_text(
+            "😔 Не удалось создать фотографию.\n\n"
+            "Попробуй отправить фото ещё раз."
+        )
+        return
 
-    # ------------------------------------------
-    # 📸 КЛИЕНТСКАЯ ГЕНЕРАЦИЯ (НАЧИНАЕТСЯ ТУТ)
-    # ------------------------------------------
+    # =======================================================
+    # 📸 КЛИЕНТСКАЯ ГЕНЕРАЦИЯ (СЮДА ПОПАДАЮТ ТОЛЬКО ОБЫЧНЫЕ ПОЛЬЗОВАТЕЛИ)
+    # =======================================================
     custom_prompt = context.user_data.get("custom_prompt") if context.user_data.get("custom_prompt_state") == "waiting_photo" else None
     style = context.user_data.get("selected_style")
     # ... далее идет ваш старый неизмененный код проверки балансов клиентов ...
