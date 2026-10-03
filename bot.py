@@ -1049,15 +1049,15 @@ async def unknown_text(update, context):
 
         result = await asyncio.to_thread(generate_image)
 
-        if not result.data or not getattr(result.data, "b64_json", None):
+        if not result.data or not getattr(result.data[0], "b64_json", None):
             raise RuntimeError("OpenAI returned no image")
 
-        generated_bytes = base64.b64decode(result.data.b64_json)
+        generated_bytes = base64.b64decode(result.data[0].b64_json)
         
         output = io.BytesIO(generated_bytes)
         output.name = "ai_photo.png"
 
-        # Отправляем готовый кадр пользователю в чат
+        # Отправляем готовый кадр пользователю в чат с кнопками меню
         sent_message = await update.message.reply_photo(
             photo=output,
             caption=(
@@ -1065,8 +1065,55 @@ async def unknown_text(update, context):
                 f"{session['title']}\n\n"
                 "Хочешь ещё фото? Выбери другую фотосессию 👇"
             ),
-          
-    # ===============================================
+            reply_markup=client_keyboard()
+        )
+
+        # =======================================================
+        # ЖЕСТКАЯ ФИКСАЦИЯ РЕЗУЛЬТАТА НА ПОСТОЯННЫЙ ДИСК RENDER
+        # =======================================================
+        tg_file_id = sent_message.photo[-1].file_id
+        local_filename = f"gen_{tg_file_id}.jpg"
+        local_photo_path = os.path.join(PHOTOS_DIR, local_filename)
+        
+        try:
+            with open(local_photo_path, "wb") as f:
+                f.write(generated_bytes)
+
+            # Логируем связку промта и картинки в историю prompts.json на диске Render
+            save_photo_to_history(
+                photo_id=sent_message.message_id,
+                session_key=style or "custom",
+                photo_path=local_photo_path,
+                tg_file_id=tg_file_id,
+                channel_msg_id=None,
+                prompt=prompt_text,
+                user_id=update.effective_user.id
+            )
+        except Exception as e:
+            logger.error(f"Ошибка при записи файла на постоянный диск Render: {e}")
+
+        # Списание Kaspi-кредитов у пользователей
+        if not is_admin(update):
+            if using_paid_credit:
+                if user_id_str in USERS:
+                    USERS[user_id_str]["paid_photos"] = max(0, paid_photos - 1)
+                    save_users(USERS)
+            elif using_free_credit:
+                FREE_USERS.add(user_id_str)
+                save_free_users(FREE_USERS)
+                context.user_data["free_used"] = True
+
+        # Сбрасываем временные состояния пользователя
+        context.user_data.pop("selected_gallery_index", None)
+        context.user_data.pop("custom_prompt_state", None)
+        context.user_data.pop("custom_prompt", None)
+
+    except Exception:
+        logger.exception("Image generation error")
+        await update.message.reply_text(
+            "😔 Не удалось создать фотографию.\n\nПопробуй отправить фото ещё раз."
+        )
+    return
 
     # =======================================================
     # 📸 КЛИЕНТСКАЯ ГЕНЕРАЦИЯ (СЮДА ПОПАДАЮТ ТОЛЬКО ОБЫЧНЫЕ ПОЛЬЗОВАТЕЛИ)
