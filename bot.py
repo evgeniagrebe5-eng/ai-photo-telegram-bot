@@ -1072,22 +1072,16 @@ async def unknown_text(update, context):
     # =======================================================
     # 📸 КЛИЕНТСКАЯ ГЕНЕРАЦИЯ (СЮДА ПОПАДАЮТ ТОЛЬКО ОБЫЧНЫЕ ПОЛЬЗОВАТЕЛИ)
     # =======================================================
-    except Exception:
-               logger.exception("Image generation error")
-               await update.message.reply_text(
-               "😔 Не удалось создать фотографию.\n\n"
-               "Попробуй отправить фото ещё раз."
-               )
-               return
-
-    # =======================================================
-    # 📸 КЛИЕНТСКАЯ ГЕНЕРАЦИЯ (СЮДА ПОПАДАЮТ ТОЛЬКО ОБЫЧНЫЕ ПОЛЬЗОВАТЕЛИ)
-    # =======================================================
     custom_prompt = context.user_data.get("custom_prompt") if context.user_data.get("custom_prompt_state") == "waiting_photo" else None
     style = context.user_data.get("selected_style")
     # ... далее идет ваш старый неизмененный код проверки балансов клиентов ...
 
-            if not edit_key or edit_key not in SESSIONS:
+    # =======================================================
+    # 👑 ПЕРЕХВАТ МЕДИА: РУЧНОЕ ДОБАВЛЕНИЕ (ОТСТУПЫ ВЫРОВНЕНЫ)
+    # =======================================================
+    if is_admin(update) and context.user_data.get("edit_key") is not None:
+        edit_key = context.user_data.get("edit_key")
+        if not edit_key or edit_key not in SESSIONS:
             context.user_data.clear()
             await update.message.reply_text("❌ Ошибка: фотосессия не найдена.")
             return
@@ -1118,6 +1112,7 @@ async def unknown_text(update, context):
             logger.error(f"Ошибка при сохранении фото из админки: {e}")
             await update.message.reply_text("❌ Не удалось сохранить файл на диск. Проверьте логи.")
         return
+
 
     # ------------------------------------------
     # 📸 КЛИЕНТСКАЯ ГЕНЕРАЦИЯ
