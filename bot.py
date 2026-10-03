@@ -1073,11 +1073,11 @@ async def unknown_text(update, context):
     # 📸 КЛИЕНТСКАЯ ГЕНЕРАЦИЯ (СЮДА ПОПАДАЮТ ТОЛЬКО ОБЫЧНЫЕ ПОЛЬЗОВАТЕЛИ)
     # =======================================================
         except Exception:
-        logger.exception("Image generation error")
-        await update.message.reply_text(
-            "😔 Не удалось создать фотографию.\n\n"
-            "Попробуй отправить фото ещё раз."
-        )
+                   logger.exception("Image generation error")
+                   await update.message.reply_text(
+                   "😔 Не удалось создать фотографию.\n\n"
+                   "Попробуй отправить фото ещё раз."
+                   )
         return
 
     # =======================================================
