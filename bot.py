@@ -1057,6 +1057,7 @@ async def unknown_text(update, context):
         output = io.BytesIO(generated_bytes)
         output.name = "ai_photo.png"
 
+        # Отправляем готовый кадр пользователю в чат
         sent_message = await update.message.reply_photo(
             photo=output,
             caption=(
