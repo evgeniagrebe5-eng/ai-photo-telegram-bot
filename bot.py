@@ -1087,7 +1087,7 @@ async def unknown_text(update, context):
     style = context.user_data.get("selected_style")
     # ... далее идет ваш старый неизмененный код проверки балансов клиентов ...
 
-        if not edit_key or edit_key not in SESSIONS:
+            if not edit_key or edit_key not in SESSIONS:
             context.user_data.clear()
             await update.message.reply_text("❌ Ошибка: фотосессия не найдена.")
             return
