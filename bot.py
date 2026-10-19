@@ -1371,17 +1371,31 @@ async def custom_prompt_text_handler(
     )
 
 
+
 async def unknown_text(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
+    if not update.message or not update.message.text:
+        return
+
+    # Не мешаем работе админки
     if is_admin(update) and context.user_data.get("admin_state"):
+        return
+
+    # Не показываем меню, пока клиент вводит свой промт
+    # или уже отправил промт и должен загрузить фотографию
+    if context.user_data.get("custom_prompt_state") in (
+        "waiting_text",
+        "waiting_photo",
+    ):
         return
 
     await update.message.reply_text(
         "Выбери фотосессию 👇",
         reply_markup=client_keyboard(),
     )
+
 
 
 # ==========================================
