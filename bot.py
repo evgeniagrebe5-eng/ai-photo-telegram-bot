@@ -1037,15 +1037,40 @@ async def generate_client_photo(
                 )
 
         else:
-            final_prompt = prompt_text
+            final_prompt = f"""
+STRICT FACE LOCK — HIGHEST PRIORITY.
 
-            def generate_image():
-                return client.images.edit(
-                    model="gpt-image-2",
-                    image=image_file,
-                    prompt=final_prompt,
-                    size="1024x1536",
-                )
+The uploaded photograph is the ONLY identity reference.
+The final image must depict the exact same person.
+
+Preserve:
+- Original face shape and facial proportions.
+- Exact eyes, eyebrows, nose, lips, jawline and chin.
+- Natural facial asymmetry and unique features.
+- Real age, skin tone and natural skin texture.
+- Recognizable facial identity.
+
+STRICTLY FORBIDDEN:
+- Face replacement or face swapping.
+- Beautification, rejuvenation or facial reshaping.
+- Changing eye shape, nose, lips or facial proportions.
+- Creating a generic fashion-model face.
+- Artificial skin smoothing.
+- Changing ethnicity or age.
+
+The user's photograph defines WHO the person is.
+The prompt below defines ONLY the desired image,
+clothing, environment, lighting, pose and style.
+
+USER'S CREATIVE PROMPT:
+{prompt_text}
+
+FINAL REQUIREMENT:
+Create a highly photorealistic professional photograph.
+Keep the original person clearly recognizable.
+Facial identity preservation takes priority over style.
+"""
+
 
         result = await asyncio.to_thread(generate_image)
 
